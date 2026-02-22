@@ -124,6 +124,7 @@ class AtivoB3(models.Model):
 
 class HistoricoImportacao(models.Model):
     data_importacao = models.DateTimeField(auto_now_add=True)
+    tipo_importacao = models.CharField(max_length=50, blank=True, default='')
     arquivo_nome = models.CharField(max_length=255)
     novos = models.IntegerField(default=0)
     atualizados = models.IntegerField(default=0)
@@ -147,7 +148,7 @@ class AtivoMonitorado(models.Model):
 
     class Meta:
         verbose_name = "Ativo Monitorado"
-        verbose_name = "Ativos Monitorados"
+        #verbose_name = "Ativos Monitorados"
 
 
 class HistoricoPreco(models.Model):

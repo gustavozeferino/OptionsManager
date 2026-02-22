@@ -32,23 +32,40 @@
         </div>
     </div>
 
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white py-3">
-            <h5 class="mb-0 text-muted text-uppercase small fw-bold">Manutenção do Sistema</h5>
+            <h5 class="mb-0 text-muted text-uppercase small fw-bold">Importação de Dados</h5>
         </div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <a href="{% url 'core:upload_csv' %}" class="btn btn-light border w-100 py-3">
                         <i class="bi bi-plus-circle d-block fs-4"></i> Atualizar Ativos
                     </a>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <a href="{% url 'core:upload_precos' %}" class="btn btn-light border w-100 py-3">
                         <i class="bi bi-graph-up-arrow d-block fs-4"></i> Atualizar Pregão
                     </a>
                 </div>
-                <div class="col-md-4">
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h5 class="mb-0 text-muted text-uppercase small fw-bold">Manutenção do Banco de Dados</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <a href="{% url 'core:remover_historico_precos_duplicados' %}" 
+                       class="btn btn-outline-warning w-100 py-3"
+                       onclick="return confirm('Tem certeza que deseja remover preços duplicados?')">
+                        <i class="bi bi-intersect d-block fs-4"></i> Remover Preços Duplicados
+                    </a>
+                </div>
+                <div class="col-md-6">
                     <a href="{% url 'core:limpar_ativos_nao_monitorados' %}" 
                        class="btn btn-outline-danger w-100 py-3"
                        onclick="return confirm('Tem certeza que deseja apagar ativos não monitorados? Esta ação é irreversível.')">

@@ -104,3 +104,67 @@ class ImportacaoCSVTestCase(TestCase):
         self.assertEqual(float(ativo.preco_exercicio), 30.50)
         self.assertEqual(ativo.ativo_objeto, "PETR4")
 
+    def test_upload_csv_historico(self):
+        """Testa se o histórico de importação é gravado corretamente no upload_csv"""
+        self.client.login(username='admin', password='admin123')
+        
+        csv_content = (
+            "Código ISIN;Instrumento financeiro;Ativo;Tipo de opção;Preço de exercício;Data de expiração\n"
+            "BR12345;PETRL30;PETR4;CALL;R$ 30,50;20/03/2026\n"
+        )
+        csv_file = SimpleUploadedFile("teste_hist.csv", csv_content.encode('latin1'), content_type="text/csv")
+        
+        from .models import HistoricoImportacao
+        initial_count = HistoricoImportacao.objects.count()
+        
+        response = self.client.post(reverse('core:upload_csv'), {'arquivo': csv_file}, follow=True)
+        
+        self.assertEqual(HistoricoImportacao.objects.count(), initial_count + 1)
+        historico = HistoricoImportacao.objects.first()
+        self.assertEqual(historico.tipo_importacao, 'Cadastro de Instrumentos')
+        self.assertEqual(historico.novos, 1)
+
+
+class HistoricoPrecosTestCase(TestCase):
+    """Testa o processo de Upload de Preços e gravação de histórico"""
+
+    def setUp(self):
+        self.client = Client()
+        self.admin_user = User.objects.create_superuser(username='admin', password='admin123', email='admin@optionsmanager.com')
+        # Precisamos de um AtivoB3 já cadastrado para importar preço
+        self.ativo = AtivoB3.objects.create(
+            codigo_isin="BR_TESTE_123",
+            ticker="PETRL30",
+            ativo_objeto="PETR4"
+        )
+
+    def test_upload_precos_historico(self):
+        self.client.login(username='admin', password='admin123')
+
+        # CSV de preços (Negócios Consolidados)
+        csv_content = (
+            "Código ISIN;Preço de abertura;Preço máximo;Preço mínimo;Preço de fechamento;Quantidade de negócios;Volume financeiro\n"
+            "BR_TESTE_123;R$ 1,50;R$ 1,60;R$ 1,45;R$ 1,55;1000;R$ 1.550,00\n"
+        )
+        csv_file = SimpleUploadedFile("precos.csv", csv_content.encode('latin1'), content_type="text/csv")
+
+        from .models import HistoricoImportacao, HistoricoPreco
+        initial_hist_count = HistoricoImportacao.objects.count()
+
+        url = reverse('core:upload_precos')
+        # Precisamos enviar data_manual se o CSV não tiver 'Data do negócio'
+        response = self.client.post(url, {
+            'arquivo': csv_file,
+            'data_manual': '2026-02-22'
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(HistoricoPreco.objects.count(), 1)
+        
+        # Verifica histórico
+        self.assertEqual(HistoricoImportacao.objects.count(), initial_hist_count + 1)
+        historico = HistoricoImportacao.objects.first()
+        self.assertEqual(historico.tipo_importacao, 'Negócios Consolidados')
+        self.assertEqual(historico.novos, 1) # Primeiro registro é 'novo'
+        self.assertEqual(historico.arquivo_nome, "precos.csv")
+

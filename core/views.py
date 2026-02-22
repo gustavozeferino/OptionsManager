@@ -160,6 +160,7 @@ def upload_csv(request):
 
         # Salva histórico final
         historico = HistoricoImportacao.objects.create(
+            tipo_importacao='Cadastro de Instrumentos',
             arquivo_nome=file.name,
             novos=relatorio['novos'],
             atualizados=relatorio['atualizados'],
@@ -278,8 +279,13 @@ def upload_precos(request):
 
             # 2. LEITURA COMPLETA
             print(f"[2/4] Carregando Dataframe (skiprows={linha_cabecalho})...")
+            
+            # Lê todo o conteúdo para um StringIO para evitar problemas com ponteiro de arquivo
+            content = file.read().decode('latin1')
+            io_string = io.StringIO(content)
+            
             # Deixamos o pandas tentar detectar o separador automaticamente ou usamos o ';'
-            df = pd.read_csv(file, sep=';', skiprows=linha_cabecalho, engine='c', encoding='latin1', on_bad_lines='skip')
+            df = pd.read_csv(io_string, sep=';', skiprows=linha_cabecalho, engine='python', on_bad_lines='skip')
             
             # Recalibra o nome da coluna ISIN após o novo mapeamento de colunas
             coluna_isin = next((c for c in df.columns if 'ISIN' in c.upper()), None)
@@ -291,6 +297,9 @@ def upload_precos(request):
             ativos_no_banco = AtivoB3.objects.values_list('codigo_isin', flat=True)
             set_isins = set(ativos_no_banco)
             
+            # Garantimos que a coluna ISIN seja string e sem espaços
+            df[coluna_isin] = df[coluna_isin].astype(str).str.strip()
+            
             df_filtrado = df[df[coluna_isin].isin(set_isins)].copy()
             total_para_gravar = len(df_filtrado)
             
@@ -301,7 +310,7 @@ def upload_precos(request):
 
             # 4. GRAVAÇÃO ATÔMICA
             print(f"[3/4] Gravando {total_para_gravar} registros no banco...")
-            contadores = {'sucesso': 0, 'erro': 0}
+            relatorio = {'novos': 0, 'atualizados': 0, 'sem_alteracao': 0, 'logs': []}
 
             with transaction.atomic():
                 # Mapa de objetos para evitar milhares de queries
@@ -320,7 +329,7 @@ def upload_precos(request):
                             dt_pregao = datetime.datetime.strptime(data_manual_str, '%Y-%m-%d').date()
 
                         # Gravação/Atualização
-                        HistoricoPreco.objects.update_or_create(
+                        obj, created = HistoricoPreco.objects.update_or_create(
                             ativo=ativo_obj,
                             data_pregao=dt_pregao,
                             defaults={
@@ -333,23 +342,36 @@ def upload_precos(request):
                                 'volume_financeiro': clean_numeric(row.get('Volume financeiro')),
                             }
                         )
-                        contadores['sucesso'] += 1
                         
+                        if created:
+                            relatorio['novos'] += 1
+                        else:
+                            relatorio['atualizados'] += 1
+
                         if index % 100 == 0 or index == total_para_gravar:
                             print(f"    > Processado: {index}/{total_para_gravar} ({ (index/total_para_gravar)*100:.1f}%)")
 
                     except Exception as e:
-                        contadores['erro'] += 1
+                        relatorio['logs'].append(f"Erro na linha {index}: {e}")
                         continue
+
+            # Salva histórico final
+            historico = HistoricoImportacao.objects.create(
+                tipo_importacao='Negócios Consolidados',
+                arquivo_nome=file.name,
+                novos=relatorio['novos'],
+                atualizados=relatorio['atualizados'],
+                sem_alteracao=0,
+                detalhes=relatorio['logs']
+            )
 
             end_time = time.time()
             print("="*60)
             print(f"[4/4] FINALIZADO EM {end_time - start_time:.2f} SEGUNDOS")
-            print(f"[*] Sucesso: {contadores['sucesso']} | Erros: {contadores['erro']}")
+            print(f"[*] Sucesso: {relatorio['novos'] + relatorio['atualizados']} | Erros: {len(relatorio['logs'])}")
             print("="*60 + "\n")
 
-            messages.success(request, f"Importação de {contadores['sucesso']} preços concluída com sucesso!")
-            return redirect('core:home')
+            return render(request, 'core/relatorio_importacao.html', {'relatorio': historico})
 
         except Exception as e:
             print(f"\n[!!!] ERRO NO PROCESSAMENTO: {e}\n")
@@ -405,3 +427,38 @@ def detalhe_ativo(request, ticker):
         'volume_json': json.dumps(volume_data),
     }
     return render(request, 'core/detalhe_ativo.html', context)
+
+@user_passes_test(apenas_admin)
+def remover_historico_precos_duplicados(request):
+    """
+    Remove entradas duplicadas na tabela HistoricoPreco.
+    Mantém apenas o registro mais recente (maior ID) para cada par (ativo, data_pregao).
+    """
+    from django.db.models import Count, Max
+    
+    # Identifica pares (ativo, data_pregao) que aparecem mais de uma vez
+    duplicados = HistoricoPreco.objects.values('ativo', 'data_pregao').annotate(
+        count=Count('id'),
+        max_id=Max('id')
+    ).filter(count__gt=1)
+    
+    total_removidos = 0
+    
+    with transaction.atomic():
+        for item in duplicados:
+            # Seleciona todos os IDs para este par, exceto o maior (o mais recente)
+            ids_para_remover = HistoricoPreco.objects.filter(
+                ativo_id=item['ativo'],
+                data_pregao=item['data_pregao']
+            ).exclude(id=item['max_id']).values_list('id', flat=True)
+            
+            # Remove os duplicados
+            removidos, _ = HistoricoPreco.objects.filter(id__in=ids_para_remover).delete()
+            total_removidos += removidos
+
+    if total_removidos > 0:
+        messages.success(request, f"Sucesso! {total_removidos} registros duplicados de preços foram removidos.")
+    else:
+        messages.info(request, "A base de dados de preços já está limpa e sem duplicidade.")
+        
+    return redirect('core:home')

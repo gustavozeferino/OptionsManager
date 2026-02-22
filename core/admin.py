@@ -3,7 +3,7 @@ from .models import AtivoB3
 from .models import AtivoMonitorado
 from .models import AcessoLog
 from django import forms
-from .models import HistoricoPreco
+from .models import HistoricoPreco, HistoricoImportacao
 
 class AtivoB3Form(forms.ModelForm):
     class Meta:
@@ -84,3 +84,13 @@ class HistoricoPrecoAdmin(admin.ModelAdmin):
         return obj.ativo.ticker
 
 
+@admin.register(HistoricoImportacao)
+class HistoricoImportacaoAdmin(admin.ModelAdmin):
+    list_display = ('data_importacao', 'tipo_importacao', 'arquivo_nome', 'novos', 'atualizados', 'sem_alteracao')
+    list_filter = ('tipo_importacao', 'data_importacao')
+    search_fields = ('arquivo_nome', 'tipo_importacao')
+    ordering = ('-data_importacao',)
+    readonly_fields = ('data_importacao', 'tipo_importacao', 'arquivo_nome', 'novos', 'atualizados', 'sem_alteracao', 'detalhes')
+
+    def has_add_permission(self, request):
+        return False

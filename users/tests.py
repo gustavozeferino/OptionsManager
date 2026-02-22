@@ -44,3 +44,47 @@ class UserModelTest(TestCase):
                 email='test@example.com',
                 password='pass123'
             )
+
+
+class UserViewTest(TestCase):
+    """Testes para as views de usuário."""
+
+    def setUp(self):
+        self.user_password = 'testpass123'
+        self.user = User.objects.create_user(
+            username='viewuser',
+            email='view@example.com',
+            password=self.user_password
+        )
+
+    def test_login_page_status_code(self):
+        """Testa se a página de login está acessível."""
+        response = self.client.get('/users/login/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'users/login.html')
+
+    def test_login_successful(self):
+        """Testa login com credenciais válidas."""
+        response = self.client.post('/users/login/', {
+            'username': 'viewuser',
+            'password': self.user_password
+        })
+        # LoginView redireciona após sucesso
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+
+    def test_login_failed(self):
+        """Testa login com credenciais inválidas."""
+        response = self.client.post('/users/login/', {
+            'username': 'viewuser',
+            'password': 'wrongpassword'
+        })
+        self.assertEqual(response.status_code, 200)  # Volta para o form com erro
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+    def test_logout_successful(self):
+        """Testa logout."""
+        self.client.login(username='viewuser', password=self.user_password)
+        response = self.client.post('/users/logout/')
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
