@@ -1,0 +1,407 @@
+import io
+import pandas as pd
+from django.shortcuts import render, redirect
+from django.core.paginator import Paginator
+from django.contrib import messages
+from .models import AtivoB3, HistoricoImportacao, AtivoMonitorado, AcessoLog, HistoricoPreco
+from django.contrib.auth.decorators import user_passes_test
+import datetime
+import time
+from django.db import transaction
+from django.db.models import Max, Q
+from django.utils import timezone
+import json
+from django.shortcuts import get_object_or_404
+
+def apenas_admin(user):
+    return user.is_superuser
+
+@user_passes_test(apenas_admin)
+def home(request):
+    hoje = timezone.now().date()
+    
+    # Total de opções que ainda não venceram
+    ativos_vivos = AtivoB3.objects.filter(data_expiracao__gte=hoje).count()
+    
+    # Última data de pregão registrada
+    ultima_data = HistoricoPreco.objects.aggregate(Max('data_pregao'))['data_pregao__max']
+
+    # Buscamos os últimos logs do SEU modelo AcessoLog
+    ultimos_logs = AcessoLog.objects.all().order_by('-data_acesso')[:5]
+    
+    context = {
+        'ativos_vivos': ativos_vivos,
+        'ultima_data': ultima_data,
+        'total_geral': AtivoB3.objects.count(),
+        'ultimos_logs': ultimos_logs,
+    }
+    return render(request, 'core/home.html', context)
+
+@user_passes_test(apenas_admin)
+def lista_logs(request):
+    logs_list = AcessoLog.objects.all().order_by('-data_acesso')
+    paginator = Paginator(logs_list, 50)
+    page_number = request.GET.get('page')
+    logs = paginator.get_page(page_number)
+    
+    return render(request, 'core/lista_logs.html', {'logs': logs})
+
+
+
+def clean_numeric(value):
+    """Trata R$, pontos de milhar e vírgulas decimais."""
+    if pd.isna(value) or str(value).strip() in ['', '-']:
+        return 0.0
+    s = str(value).replace('R$', '').replace('.', '').replace(',', '.').strip()
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+def clean_date(value):
+    """Trata datas, ignorando hífens ou valores inválidos."""
+    if pd.isna(value) or str(value).strip() in ['', '-']:
+        return None
+    try:
+        # O dayfirst=True é vital para o formato brasileiro DD/MM/YYYY
+        return pd.to_datetime(value, dayfirst=True).date()
+    except:
+        return None
+
+@user_passes_test(apenas_admin)
+def upload_csv(request):
+    if request.method == 'POST' and request.FILES.get('arquivo'):
+        file = request.FILES['arquivo']
+        
+        # 1. Carregar a lista de ativos permitidos do banco (em cache de memória para este request)
+        # Pegamos apenas os tickers que estão ativos
+        ativos_permitidos = list(AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True))
+
+        if not ativos_permitidos:
+            messages.warning(request, "Nenhum Ativo Monitorado cadastrado. A importação não processará dados.")
+            return redirect('core:upload_csv')
+
+        try:
+            # (Mantemos a mesma lógica de leitura de arquivos anterior...)
+            content = file.read()
+            decoded_content = content.decode('utf-8-sig') if b'\xef\xbb\xbf' in content else content.decode('latin1')
+            
+            linhas = decoded_content.splitlines()
+            pular = 0
+            for i, linha in enumerate(linhas[:15]):
+                if 'ISIN' in linha: pular = i; break
+            
+            io_string = io.StringIO(decoded_content)
+            df = pd.read_csv(io_string, sep=';', skiprows=pular, engine='python')
+            df.columns = [str(c).strip() for c in df.columns]
+        except Exception as e:
+            messages.error(request, f"Erro na estrutura: {e}")
+            return redirect('core:upload_csv')
+
+        relatorio = {'novos': 0, 'atualizados': 0, 'sem_alteracao': 0, 'logs': []}
+        
+        for index, row in df.iterrows():
+            # CAPTURA O ATIVO OBJETO DO CSV
+            ativo_obj_csv = str(row.get('Ativo', '')).strip().upper()
+
+            # FILTRO DINÂMICO
+            if ativo_obj_csv not in ativos_permitidos:
+                continue # Ignora silenciosamente se não estiver na lista
+
+            # ... Resto da lógica de ISIN, clean_numeric e update/create ...
+            isin = str(row.get('Código ISIN', '')).strip()
+            if isin in ['', 'nan', '-']:
+                continue
+
+            # Mapeamento com limpeza
+            dados_csv = {
+                'ticker': str(row.get('Instrumento financeiro', 'S/N')).strip(),
+                'ativo_objeto': str(row.get('Ativo', '')).strip(),
+                'tipo_opcao': str(row.get('Tipo de opção', '')).strip(),
+                'preco_exercicio': clean_numeric(row.get('Preço de exercício', 0)),
+                'data_expiracao': clean_date(row.get('Data de expiração')),
+                'segmento': str(row.get('Segmento', '')).strip(),
+            }
+
+            # Lógica de Banco de Dados
+            ativo_queryset = AtivoB3.objects.filter(codigo_isin__iexact=isin)
+
+            if not ativo_queryset.exists():
+                AtivoB3.objects.create(codigo_isin=isin, **dados_csv)
+                relatorio['novos'] += 1
+                relatorio['logs'].append(f"NOVO: {dados_csv['ticker']} ({isin})")
+            else:
+                ativo = ativo_queryset.first()
+                mudancas = []
+                
+                # verifica se houve alterações nos campos
+                for campo, valor_novo in dados_csv.items():
+                    valor_antigo = getattr(ativo, campo)
+                    
+                    if campo == 'preco_exercicio':
+                        if round(float(valor_antigo or 0), 2) != round(float(valor_novo or 0), 2):
+                            mudancas.append(f"Strike: {valor_antigo} -> {valor_novo}")
+                            setattr(ativo, campo, valor_novo)
+                    elif campo == 'data_expiracao':
+                        if valor_antigo != valor_novo:
+                            mudancas.append(f"Vencimento: {valor_antigo} -> {valor_novo}")
+                            setattr(ativo, campo, valor_novo)
+                    else:
+                        if str(valor_antigo).strip() != str(valor_novo).strip():
+                            mudancas.append(f"{campo}: {valor_antigo} -> {valor_novo}")
+                            setattr(ativo, campo, valor_novo)
+
+                if mudancas:
+                    ativo.save()
+                    relatorio['atualizados'] += 1
+                    relatorio['logs'].append(f"ATUALIZADO: {ativo.ticker} | {' | '.join(mudancas)}")
+                else:
+                    relatorio['sem_alteracao'] += 1
+
+        # Salva histórico final
+        historico = HistoricoImportacao.objects.create(
+            arquivo_nome=file.name,
+            novos=relatorio['novos'],
+            atualizados=relatorio['atualizados'],
+            sem_alteracao=relatorio['sem_alteracao'],
+            detalhes=relatorio['logs']
+        )
+        
+        return render(request, 'core/relatorio_importacao.html', {'relatorio': historico})
+
+    return render(request, 'core/upload.html')
+
+# Mantenha sua função de dashboard abaixo...
+
+@user_passes_test(apenas_admin)
+def lista_ativos(request):
+
+    """Exibe a lista de ativos com filtros, busca e paginação."""
+    search_query = request.GET.get('search', '')
+    ativo_filtro = request.GET.get('ativo_objeto', '')
+    vencimento_filtro = request.GET.get('vencimento', '')
+    ordenar_por = request.GET.get('order', 'ticker')
+
+    # Pega os tickers permitidos
+    permitidos = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True)
+
+    # Filtra os ativos que pertencem a essa lista
+    ativos_list = AtivoB3.objects.filter(ativo_objeto__in=permitidos)
+
+    # Filtros
+    if search_query:
+        ativos_list = ativos_list.filter(
+            Q(ticker__icontains=search_query) | Q(codigo_isin__icontains=search_query)
+        )
+    if ativo_filtro:
+        ativos_list = ativos_list.filter(ativo_objeto=ativo_filtro)
+    if vencimento_filtro:
+        ativos_list = ativos_list.filter(data_expiracao=vencimento_filtro)
+
+    ativos_list = ativos_list.order_by(ordenar_por)
+
+    # Paginação (50 por página)
+    paginator = Paginator(ativos_list, 50)
+    page_number = request.GET.get('page')
+    ativos = paginator.get_page(page_number)
+
+    # Listas para os Selects no template
+    lista_ativos_objeto = AtivoB3.objects.values_list('ativo_objeto', flat=True).distinct().order_by('ativo_objeto')
+    lista_vencimentos = AtivoB3.objects.exclude(data_expiracao__isnull=True).values_list('data_expiracao', flat=True).distinct().order_by('data_expiracao')
+
+    context = {
+        'ativos': ativos,
+        'search_query': search_query,
+        'ativo_filtro': ativo_filtro,
+        'vencimento_filtro': vencimento_filtro,
+        'lista_ativos_objeto': lista_ativos_objeto,
+        'lista_vencimentos': lista_vencimentos,
+        'order_atual': ordenar_por,
+    }
+    return render(request, 'core/lista_ativos.html', context)
+
+@user_passes_test(apenas_admin)
+def limpar_ativos_nao_monitorados(request):
+    """Remove do banco AtivoB3 todos os registros que não são Ativos Monitorados."""
+    # 1. Busca a lista de tickers que você quer MANTER
+    permitidos = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True)
+    
+    # 2. Filtra no AtivoB3 tudo que NÃO está nessa lista (usando o sinal de til ~ para negar)
+    ativos_para_deletar = AtivoB3.objects.exclude(ativo_objeto__in=permitidos)
+    
+    quantidade = ativos_para_deletar.count()
+    
+    if quantidade > 0:
+        ativos_para_deletar.delete()
+        messages.success(request, f"Limpeza concluída! {quantidade} ativos inúteis foram removidos.")
+    else:
+        messages.info(request, "O banco já está limpo. Nenhum ativo extra encontrado.")
+    
+    return redirect('core:home')
+
+
+
+@user_passes_test(apenas_admin)
+def upload_precos(request):
+    if request.method == 'POST' and request.FILES.get('arquivo'):
+        file = request.FILES['arquivo']
+        data_manual_str = request.POST.get('data_manual')
+        
+        start_time = time.time()
+        print("\n" + "="*60)
+        print(f"[*] INICIANDO IMPORTAÇÃO: {file.name}")
+        print("="*60)
+
+        try:
+            # 1. DETECÇÃO DE CABEÇALHO MAIS AGRESSIVA
+            print("[1/4] Vasculhando arquivo para localizar cabeçalho...")
+            
+            # Lê as primeiras 200 linhas sem definir separador (para não dar erro)
+            # e converte tudo para uma lista de strings para busca rápida
+            preview_raw = file.read(50000).decode('latin1').splitlines() 
+            file.seek(0) # Volta o ponteiro para o início após o preview
+
+            linha_cabecalho = None
+            for i, texto_linha in enumerate(preview_raw):
+                if 'ISIN' in texto_linha.upper():
+                    linha_cabecalho = i
+                    print(f"--- Palavra 'ISIN' encontrada na linha {i}")
+                    break
+
+            if linha_cabecalho is None:
+                # Debug: Imprime as primeiras 5 linhas que ele leu para você ver o que tem nelas
+                print("[!!!] Conteúdo inicial do arquivo para debug:")
+                for l in preview_raw[:5]: print(f"    > {l}")
+                
+                messages.error(request, "Não foi possível localizar o cabeçalho 'ISIN' no arquivo.")
+                return redirect('core:upload_precos')
+
+            # 2. LEITURA COMPLETA
+            print(f"[2/4] Carregando Dataframe (skiprows={linha_cabecalho})...")
+            # Deixamos o pandas tentar detectar o separador automaticamente ou usamos o ';'
+            df = pd.read_csv(file, sep=';', skiprows=linha_cabecalho, engine='c', encoding='latin1', on_bad_lines='skip')
+            
+            # Recalibra o nome da coluna ISIN após o novo mapeamento de colunas
+            coluna_isin = next((c for c in df.columns if 'ISIN' in c.upper()), None)
+            print(f"--- Arquivo carregado: {len(df):,} linhas.")
+            print(f"--- Coluna identificada: '{coluna_isin}'")
+
+            # 3. FILTRAGEM EM MEMÓRIA (O segredo da performance)
+            print("[2/4] Filtrando ativos monitorados...")
+            ativos_no_banco = AtivoB3.objects.values_list('codigo_isin', flat=True)
+            set_isins = set(ativos_no_banco)
+            
+            df_filtrado = df[df[coluna_isin].isin(set_isins)].copy()
+            total_para_gravar = len(df_filtrado)
+            
+            if total_para_gravar == 0:
+                print("[!] AVISO: Nenhum ativo do banco encontrado no arquivo de 1 milhão de linhas.")
+                messages.warning(request, "O arquivo foi lido, mas nenhum ISIN coincide com seus ativos cadastrados.")
+                return redirect('core:upload_precos')
+
+            # 4. GRAVAÇÃO ATÔMICA
+            print(f"[3/4] Gravando {total_para_gravar} registros no banco...")
+            contadores = {'sucesso': 0, 'erro': 0}
+
+            with transaction.atomic():
+                # Mapa de objetos para evitar milhares de queries
+                mapa_objetos = {a.codigo_isin: a for a in AtivoB3.objects.filter(codigo_isin__in=set_isins)}
+
+                for index, (idx_df, row) in enumerate(df_filtrado.iterrows(), 1):
+                    try:
+                        isin = row[coluna_isin]
+                        ativo_obj = mapa_objetos.get(isin)
+                        
+                        # Tratamento de Data (Coluna vs Manual)
+                        data_linha = row.get('Data do negócio')
+                        if pd.notna(data_linha) and str(data_linha).strip() != '-':
+                            dt_pregao = pd.to_datetime(data_linha, dayfirst=True).date()
+                        else:
+                            dt_pregao = datetime.datetime.strptime(data_manual_str, '%Y-%m-%d').date()
+
+                        # Gravação/Atualização
+                        HistoricoPreco.objects.update_or_create(
+                            ativo=ativo_obj,
+                            data_pregao=dt_pregao,
+                            defaults={
+                                'abertura': clean_numeric(row.get('Preço de abertura')),
+                                'maximo': clean_numeric(row.get('Preço máximo')),
+                                'minimo': clean_numeric(row.get('Preço mínimo')),
+                                'fechamento': clean_numeric(row.get('Preço de fechamento')),
+                                'ajuste': clean_numeric(row.get('Ajuste')),
+                                'quantidade_negocios': int(clean_numeric(row.get('Quantidade de negócios'))),
+                                'volume_financeiro': clean_numeric(row.get('Volume financeiro')),
+                            }
+                        )
+                        contadores['sucesso'] += 1
+                        
+                        if index % 100 == 0 or index == total_para_gravar:
+                            print(f"    > Processado: {index}/{total_para_gravar} ({ (index/total_para_gravar)*100:.1f}%)")
+
+                    except Exception as e:
+                        contadores['erro'] += 1
+                        continue
+
+            end_time = time.time()
+            print("="*60)
+            print(f"[4/4] FINALIZADO EM {end_time - start_time:.2f} SEGUNDOS")
+            print(f"[*] Sucesso: {contadores['sucesso']} | Erros: {contadores['erro']}")
+            print("="*60 + "\n")
+
+            messages.success(request, f"Importação de {contadores['sucesso']} preços concluída com sucesso!")
+            return redirect('core:home')
+
+        except Exception as e:
+            print(f"\n[!!!] ERRO NO PROCESSAMENTO: {e}\n")
+            messages.error(request, f"Erro ao processar arquivo: {e}")
+            return redirect('core:upload_precos')
+
+    return render(request, 'core/upload_precos.html', {'hoje': datetime.date.today()})
+
+
+def detalhe_ativo(request, ticker):
+    ativo = get_object_or_404(AtivoB3, ticker=ticker)
+    historico = HistoricoPreco.objects.filter(ativo=ativo).order_by('-data_pregao')
+    
+    # Cálculo de dias para o vencimento
+    dias_para_vencer = (ativo.data_expiracao - timezone.now().date()).days
+    
+    # Preparando dados para o gráfico (precisa ser em ordem cronológica)
+    historico_qs = HistoricoPreco.objects.filter(
+        ativo=ativo, 
+        fechamento__gt=0
+    ).order_by('data_pregao')
+    
+    ohlc_data = []
+    volume_data = []
+    echarts_data =[]
+    
+    for h in historico_qs:
+        # Usamos apenas a string da data como categoria
+        label = h.data_pregao.strftime('%d/%m/%Y')
+        
+        ohlc_data.append({
+            'x': label,
+            'y': [float(h.abertura), float(h.maximo), float(h.minimo), float(h.fechamento)]
+        })
+        volume_data.append({
+            'x': label,
+            'y': float(h.volume_financeiro)
+        })
+
+        echarts_data.append({
+            'x': label,
+            'y': [float(h.abertura), float(h.fechamento), float(h.minimo), float(h.maximo)]
+        })
+
+
+    context = {
+        'ativo': ativo,
+        'historico': historico,
+        'dias_para_vencer': dias_para_vencer,
+        # Passamos os dados do gráfico como JSON para o JavaScript ler
+        'ohlc_json': ohlc_data,
+        'echarts_data' : echarts_data,
+        'volume_json': json.dumps(volume_data),
+    }
+    return render(request, 'core/detalhe_ativo.html', context)

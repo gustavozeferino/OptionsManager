@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card bg-success text-white mb-3 text-center">
+                <div class="card-body"><h3>{{ relatorio.novos }}</h3> Novos Ativos</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-warning text-dark mb-3 text-center">
+                <div class="card-body"><h3>{{ relatorio.atualizados }}</h3> Atualizados</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-light mb-3 text-center">
+                <div class="card-body"><h3>{{ relatorio.sem_alteracao }}</h3> Sem Mudanças</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow">
+        <div class="card-header"><h5>Detalhes do Processamento</h5></div>
+        <div class="card-body">
+            <ul class="list-group list-group-flush">
+                {% for log in relatorio.detalhes %}
+                    <li class="list-group-item small">{{ log }}</li>
+                {% empty %}
+                    <li class="list-group-item">Nenhuma alteração detectada nos registros existentes.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="card-footer">
+            <a href="{% url 'core:lista_ativos' %}" class="btn btn-primary">Voltar para lista de ativos</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

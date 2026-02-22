@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-end mb-4">
+        <a href="{% url 'core:lista_ativos' %}" class="btn btn-outline-primary shadow-sm">
+            <i class="bi bi-list-ul"></i> Gerenciar Ativos Cadastrados
+        </a>
+    </div>
+
+    <div class="row mb-5">
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm bg-primary text-white">
+                <div class="card-body p-4 text-center">
+                    <h5 class="text-uppercase small opacity-75">Ativos Monitorados (Não Vencidos)</h5>
+                    <h1 class="display-4 fw-bold">{{ ativos_vivos }}</h1>
+                    <p class="mb-0">Total no banco: {{ total_geral }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm bg-dark text-white">
+                <div class="card-body p-4 text-center">
+                    <h5 class="text-uppercase small opacity-75">Última Data de Negociação</h5>
+                    <h1 class="display-4 fw-bold">
+                        {% if ultima_data %}{{ ultima_data|date:"d/m/Y" }}{% else %}--/--/----{% endif %}
+                    </h1>
+                    <p class="mb-0 text-info">Base de dados atualizada</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+            <h5 class="mb-0 text-muted text-uppercase small fw-bold">Manutenção do Sistema</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <a href="{% url 'core:upload_csv' %}" class="btn btn-light border w-100 py-3">
+                        <i class="bi bi-plus-circle d-block fs-4"></i> Atualizar Ativos
+                    </a>
+                </div>
+                <div class="col-md-4">
+                    <a href="{% url 'core:upload_precos' %}" class="btn btn-light border w-100 py-3">
+                        <i class="bi bi-graph-up-arrow d-block fs-4"></i> Atualizar Pregão
+                    </a>
+                </div>
+                <div class="col-md-4">
+                    <a href="{% url 'core:limpar_ativos_nao_monitorados' %}" 
+                       class="btn btn-outline-danger w-100 py-3"
+                       onclick="return confirm('Tem certeza que deseja apagar ativos não monitorados? Esta ação é irreversível.')">
+                        <i class="bi bi-trash d-block fs-4"></i> Limpar Banco
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                    <h5 class="mb-0 text-muted text-uppercase small fw-bold">Monitoramento de Acesso</h5>
+                    <a href="{% url 'core:lista_logs' %}" class="btn btn-sm btn-outline-secondary">Histórico Completo</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Horário</th>
+                                    <th>Usuário</th>
+                                    <th>Método</th>
+                                    <th>Caminho (Path)</th>
+                                    <th>Endereço IP</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for log in ultimos_logs %}
+                                <tr>
+                                    <td class="small">{{ log.data_acesso|date:"d/m H:i:s" }}</td>
+                                    <td>
+                                        <span class="badge {% if log.usuario.is_staff %}bg-primary{% else %}bg-info text-dark{% endif %}">
+                                            {{ log.usuario.username|default:"Anônimo" }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border">{{ log.metodo }}</span>
+                                    </td>
+                                    <td class="small text-muted"><code>{{ log.path }}</code></td>
+                                    <td class="small font-monospace">{{ log.ip_address }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center py-4 text-muted">Sem registros de acesso.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+</div>
+{% endblock %}

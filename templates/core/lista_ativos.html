@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard de Ativos - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i class="fas fa-chart-line me-2"></i>Lista de Ativos</h1>
+        <p class="text-muted small mb-0">Gerencie seus instrumentos e acompanhe os vencimentos</p>
+    </div>
+    
+    <div class="d-flex align-items-center gap-2">
+        <a href="{% url 'core:limpar_banco' %}" 
+           class="btn btn-outline-danger" 
+           onclick="return confirm('Deseja realmente apagar todos os ativos que não estão na sua lista de monitoramento?')">
+            <i class="fas fa-trash-alt me-2"></i>Limpar Banco
+        </a>
+    
+        <a href="{% url 'core:upload_csv' %}" class="btn btn-dark">
+            <i class="fas fa-file-import me-2"></i>Importar Cadastro
+        </a>
+    </div></div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" action="{% url 'core:lista_ativos' %}">
+            
+            <div class="row mb-3">
+                <div class="col-12">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light"><i class="fas fa-search"></i></span>
+                        <input 
+                            type="text" 
+                            class="form-control form-control-lg" 
+                            name="search" 
+                            value="{{ search_query }}" 
+                            placeholder="Pesquise por Ticker, ISIN ou descrição..."
+                        >
+                        <button type="submit" class="btn btn-primary px-4">Buscar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-2 align-items-center">
+                <div class="col-md-4">
+                    <label class="small text-muted fw-bold">Ativo Objeto:</label>
+                    <select name="ativo_objeto" class="form-select">
+                        <option value="">Todos</option>
+                        {% for obj in lista_ativos_objeto %}
+                            <option value="{{ obj }}" {% if ativo_filtro == obj %}selected{% endif %}>{{ obj }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="small text-muted fw-bold">Vencimento:</label>
+                    <select name="vencimento" class="form-select">
+                        <option value="">Todos</option>
+                        {% for data in lista_vencimentos %}
+                            <option value="{{ data|date:'Y-m-d' }}" {% if vencimento_filtro == data|date:'Y-m-d' %}selected{% endif %}>
+                                {{ data|date:"d/m/Y" }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="fas fa-filter me-1"></i>Filtrar
+                    </button>
+                    {% if search_query or ativo_filtro or vencimento_filtro %}
+                        <a href="{% url 'core:lista_ativos' %}" class="btn btn-outline-secondary w-100">Limpar</a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <input type="hidden" name="order" value="{{ order_atual }}">
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>
+                            <a href="?search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order=ativo_objeto" class="text-white text-decoration-none">
+                                Ativo Objeto <i class="fas fa-sort"></i>
+                            </a>
+                        </th>
+                        <th>
+                            <a href="?search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order=ticker" class="text-white text-decoration-none">
+                                Ticker <i class="fas fa-sort"></i>
+                            </a>
+                        </th>
+                        <th>Tipo</th>
+                        <th>
+                            <a href="?search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order=preco_exercicio" class="text-white text-decoration-none">
+                                Strike <i class="fas fa-sort"></i>
+                            </a>
+                        </th>
+                        <th>
+                            <a href="?search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order=data_expiracao" class="text-white text-decoration-none">
+                                Vencimento <i class="fas fa-sort"></i>
+                            </a>
+                        </th>
+                        <th>DTE / Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ativo in ativos %}
+                    <tr>
+                        <td><span class="badge bg-info text-dark">{{ ativo.ativo_objeto }}</span></td>
+                        <td><strong><a href="{% url 'core:detalhe_ativo' ativo.ticker %}">{{ ativo.ticker }}</a></strong></td>
+                        <td>{{ ativo.tipo_opcao|default:"-" }}</td>
+                        <td>{% if ativo.preco_exercicio %}R$ {{ ativo.preco_exercicio|floatformat:2 }}{% else %}-{% endif %}</td>
+                        <td>{{ ativo.data_expiracao|date:"d/m/Y"|default:"-" }}</td>
+                        <td class="text-nowrap">
+                            {% if ativo.dte is not None %}
+                                {% if ativo.dte > 1 %}
+                                    <span class="badge bg-success text-white me-2">{{ ativo.dte }} dias</span>
+                                {% elif ativo.dte == 1 %}
+                                    <span class="badge bg-warning text-dark me-2">Vence Hoje</span>
+                                {% else %}
+                                    <span class="badge bg-danger text-white me-2">Expirada</span>
+                                   <!-- <span class="fw-bold small text-danger">Ref: R$ {{ ativo.preco_exercicio|floatformat:2 }}</span> -->
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center py-4">Nenhum ativo encontrado para os critérios selecionados.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if ativos.has_other_pages %}
+    <div class="card-footer bg-white py-3">
+        <nav>
+            <ul class="pagination justify-content-center mb-0">
+                {% if ativos.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1&search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order={{ order_atual }}">&laquo; Primeira</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ ativos.previous_page_number }}&search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order={{ order_atual }}">Anterior</a>
+                    </li>
+                {% endif %}
+
+                <li class="page-item disabled">
+                    <span class="page-link text-dark">Página {{ ativos.number }} de {{ ativos.paginator.num_pages }}</span>
+                </li>
+
+                {% if ativos.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ ativos.next_page_number }}&search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order={{ order_atual }}">Próxima</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ ativos.paginator.num_pages }}&search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order={{ order_atual }}">Última &raquo;</a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
