@@ -12,6 +12,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 import json
 from django.shortcuts import get_object_or_404
+from django.db.models import Count, Max
 
 def apenas_admin(user):
     return user.is_superuser
@@ -26,12 +27,21 @@ def home(request):
     # Última data de pregão registrada
     ultima_data = HistoricoPreco.objects.aggregate(Max('data_pregao'))['data_pregao__max']
 
+    # Ativos com volume > 0 na última data
+    ativos_negociados = 0
+    if ultima_data:
+        ativos_negociados = HistoricoPreco.objects.filter(
+            data_pregao=ultima_data,
+            volume_financeiro__gt=0
+        ).count()
+
     # Buscamos os últimos logs do SEU modelo AcessoLog
     ultimos_logs = AcessoLog.objects.all().order_by('-data_acesso')[:5]
     
     context = {
         'ativos_vivos': ativos_vivos,
         'ultima_data': ultima_data,
+        'ativos_negociados': ativos_negociados,
         'total_geral': AtivoB3.objects.count(),
         'ultimos_logs': ultimos_logs,
     }
@@ -434,7 +444,7 @@ def remover_historico_precos_duplicados(request):
     Remove entradas duplicadas na tabela HistoricoPreco.
     Mantém apenas o registro mais recente (maior ID) para cada par (ativo, data_pregao).
     """
-    from django.db.models import Count, Max
+    
     
     # Identifica pares (ativo, data_pregao) que aparecem mais de uma vez
     duplicados = HistoricoPreco.objects.values('ativo', 'data_pregao').annotate(

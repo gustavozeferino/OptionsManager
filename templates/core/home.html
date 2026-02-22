@@ -9,7 +9,7 @@
     </div>
 
     <div class="row mb-5">
-        <div class="col-md-6">
+        <div class="col-md-4">
             <div class="card border-0 shadow-sm bg-primary text-white">
                 <div class="card-body p-4 text-center">
                     <h5 class="text-uppercase small opacity-75">Ativos Monitorados (Não Vencidos)</h5>
@@ -19,7 +19,17 @@
             </div>
         </div>
 
-        <div class="col-md-6">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm bg-success text-white">
+                <div class="card-body p-4 text-center">
+                    <h5 class="text-uppercase small opacity-75">Ativos com Negociação</h5>
+                    <h1 class="display-4 fw-bold">{{ ativos_negociados }}</h1>
+                    <p class="mb-0">Volume financeiro > 0</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
             <div class="card border-0 shadow-sm bg-dark text-white">
                 <div class="card-body p-4 text-center">
                     <h5 class="text-uppercase small opacity-75">Última Data de Negociação</h5>
@@ -59,16 +69,15 @@
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6">
-                    <a href="{% url 'core:remover_historico_precos_duplicados' %}" 
-                       class="btn btn-outline-warning w-100 py-3"
-                       onclick="return confirm('Tem certeza que deseja remover preços duplicados?')">
+                    <a href="{% url 'core:remover_historico_precos_duplicados' %}"
+                        class="btn btn-outline-warning w-100 py-3"
+                        onclick="return confirm('Tem certeza que deseja remover preços duplicados?')">
                         <i class="bi bi-intersect d-block fs-4"></i> Remover Preços Duplicados
                     </a>
                 </div>
                 <div class="col-md-6">
-                    <a href="{% url 'core:limpar_ativos_nao_monitorados' %}" 
-                       class="btn btn-outline-danger w-100 py-3"
-                       onclick="return confirm('Tem certeza que deseja apagar ativos não monitorados? Esta ação é irreversível.')">
+                    <a href="{% url 'core:limpar_ativos_nao_monitorados' %}" class="btn btn-outline-danger w-100 py-3"
+                        onclick="return confirm('Tem certeza que deseja apagar ativos não monitorados? Esta ação é irreversível.')">
                         <i class="bi bi-trash d-block fs-4"></i> Limpar Banco
                     </a>
                 </div>
@@ -82,7 +91,8 @@
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
                     <h5 class="mb-0 text-muted text-uppercase small fw-bold">Monitoramento de Acesso</h5>
-                    <a href="{% url 'core:lista_logs' %}" class="btn btn-sm btn-outline-secondary">Histórico Completo</a>
+                    <a href="{% url 'core:lista_logs' %}" class="btn btn-sm btn-outline-secondary">Histórico
+                        Completo</a>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
@@ -101,7 +111,8 @@
                                 <tr>
                                     <td class="small">{{ log.data_acesso|date:"d/m H:i:s" }}</td>
                                     <td>
-                                        <span class="badge {% if log.usuario.is_staff %}bg-primary{% else %}bg-info text-dark{% endif %}">
+                                        <span
+                                            class="badge {% if log.usuario.is_staff %}bg-primary{% else %}bg-info text-dark{% endif %}">
                                             {{ log.usuario.username|default:"Anônimo" }}
                                         </span>
                                     </td>
