@@ -114,9 +114,34 @@ def detalhe_estrutura(request, slug):
     Exibe os detalhes de uma estrutura específica (Tabela de Posições, Tabela de Ordens).
     """
     estrutura = get_object_or_404(Estrutura, usuario=request.user, slug=slug)
-    posicoes = estrutura.posicoes.all()
-    ordens = estrutura.ordens.all()
+    posicoes = estrutura.posicoes.select_related('ativo').all()
+    ordens = estrutura.ordens.select_related('ativo').all()
     
+    from core.models import HistoricoPreco
+    for pos in posicoes:
+        if pos.quantidade_atual != 0:
+            hist = HistoricoPreco.objects.filter(ativo=pos.ativo, fechamento__gt=0).order_by('-data_pregao').first()
+            if hist:
+                pos.ultimo_preco = hist.fechamento
+                pos.data_ultimo_preco = hist.data_pregao
+            else:
+                pos.ultimo_preco = pos.preco_medio
+                pos.data_ultimo_preco = None
+                
+            if pos.quantidade_atual > 0:
+                pos.pl_aberto_calc = (pos.ultimo_preco - pos.preco_medio) * pos.quantidade_atual
+            else:
+                pos.pl_aberto_calc = (pos.preco_medio - pos.ultimo_preco) * abs(pos.quantidade_atual)
+        else:
+            pos.ultimo_preco = 0
+            pos.data_ultimo_preco = None
+            pos.pl_aberto_calc = 0
+            
+        pos.pl_total = pos.pl_realizado_acumulado + pos.pl_aberto_calc
+        
+    for o in ordens:
+        o.total_valor = abs(o.quantidade) * o.preco
+        
     snapshots = estrutura.historico_snapshots.order_by('data')
     datas_chart = [obj.data.strftime('%d/%m/%Y') for obj in snapshots]
     valores_chart = [float(obj.valor_total) for obj in snapshots]

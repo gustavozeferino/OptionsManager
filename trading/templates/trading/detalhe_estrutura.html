@@ -48,7 +48,7 @@
     <div class="col-md-3">
         <div class="card shadow-sm border-0 bg-light">
             <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1">Total (PL + Aberto)</h6>
+                <h6 class="text-muted text-uppercase mb-1">PL Total</h6>
                 <h4 class="mb-0">
                     R$ {{ estrutura.valor_total|floatformat:2|intcomma }}
                 </h4>
@@ -78,9 +78,14 @@
                         <thead class="table-light">
                             <tr>
                                 <th>Ativo</th>
+                                <th class="text-end">Strike</th>
                                 <th class="text-end">Qtd</th>
                                 <th class="text-end">Preço Médio</th>
+                                <th class="text-end">Último Preço</th>
+                                <th class="text-end">Data Último Preço</th>
                                 <th class="text-end">PL Realizado</th>
+                                <th class="text-end">PL Aberto</th>
+                                <th class="text-end">PL Total</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -88,20 +93,43 @@
                             <tr>
                                 <td class="fw-bold">{{ pos.ativo.ticker }}</td>
                                 <td class="text-end">
+                                    {% if pos.ativo.preco_exercicio %}
+                                    R$ {{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
                                     <span
                                         class="badge {% if pos.quantidade_atual > 0 %}bg-success{% elif pos.quantidade_atual < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
                                         {{ pos.quantidade_atual }}
                                     </span>
                                 </td>
                                 <td class="text-end">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    {{ pos.ultimo_preco|floatformat:2|intcomma }}
+                                </td>
+                                <td class="text-end">
+                                    {% if pos.data_ultimo_preco %}
+                                    {{ pos.data_ultimo_preco|date:"d/m/y" }}
+                                    {% endif %}
+                                </td>
                                 <td
                                     class="text-end {% if pos.pl_realizado_acumulado > 0 %}text-success{% elif pos.pl_realizado_acumulado < 0 %}text-danger{% endif %}">
                                     R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
                                 </td>
+                                <td
+                                    class="text-end {% if pos.pl_aberto_calc > 0 %}text-success{% elif pos.pl_aberto_calc < 0 %}text-danger{% endif %}">
+                                    R$ {{ pos.pl_aberto_calc|floatformat:2|intcomma }}
+                                </td>
+                                <td
+                                    class="text-end fw-bold {% if pos.pl_total > 0 %}text-success{% elif pos.pl_total < 0 %}text-danger{% endif %}">
+                                    R$ {{ pos.pl_total|floatformat:2|intcomma }}
+                                </td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="4" class="text-center text-muted py-4">Nenhuma posição ativa nesta
+                                <td colspan="8" class="text-center text-muted py-4">Nenhuma posição ativa nesta
                                     estrutura.</td>
                             </tr>
                             {% endfor %}
@@ -168,7 +196,9 @@
                     <tr>
                         <th>Data</th>
                         <th>Ativo</th>
-                        <th>Operação</th>
+                        <th class="text-end">Strike</th>
+                        <th class="text-center">Vencimento</th>
+                        <th class="text-center">Operação</th>
                         <th class="text-end">Qtd</th>
                         <th class="text-end">Preço</th>
                         <th class="text-end">Total</th>
@@ -180,7 +210,21 @@
                     <tr>
                         <td>{{ ordem.data|date:"d/m/Y" }}</td>
                         <td class="fw-bold">{{ ordem.ativo.ticker }}</td>
-                        <td>
+                        <td class="text-end">
+                            {% if ordem.ativo.preco_exercicio %}
+                            R$ {{ ordem.ativo.preco_exercicio|floatformat:2|intcomma }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if ordem.ativo.data_expiracao %}
+                            {{ ordem.ativo.data_expiracao|date:"d/m/Y" }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
                             {% if ordem.quantidade > 0 %}
                             <span
                                 class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">COMPRA</span>
@@ -191,7 +235,9 @@
                         </td>
                         <td class="text-end">{{ ordem.quantidade|stringformat:"i"|cut:"-" }}</td>
                         <td class="text-end">R$ {{ ordem.preco|floatformat:2|intcomma }}</td>
-                        <td class="text-end text-muted">R$ <!-- calcular depois valor total --></td>
+                        <td class="text-end text-muted">
+                            R$ {{ ordem.total_valor|floatformat:2|intcomma }}
+                        </td>
                         <td class="text-center">
                             <button class="btn btn-sm btn-outline-secondary" title="Editar" disabled><i
                                     class="fas fa-edit"></i></button>
@@ -205,7 +251,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-4">Nenhuma ordem registrada.</td>
+                        <td colspan="9" class="text-center text-muted py-4">Nenhuma ordem registrada.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -216,9 +262,12 @@
 
 {% endblock %}
 
+
+
 {% block extra_js %}
 <!-- ECharts -->
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         var chartDom = document.getElementById('chart-estrutura');
