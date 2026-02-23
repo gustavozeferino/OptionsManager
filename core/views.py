@@ -4,7 +4,7 @@ from django.shortcuts import render, redirect
 from django.core.paginator import Paginator
 from django.contrib import messages
 from .models import AtivoB3, HistoricoImportacao, AtivoMonitorado, AcessoLog, HistoricoPreco
-from django.contrib.auth.decorators import user_passes_test
+from django.contrib.auth.decorators import login_required, user_passes_test
 import datetime
 import time
 from django.db import transaction
@@ -17,8 +17,11 @@ from django.db.models import Count, Max
 def apenas_admin(user):
     return user.is_superuser
 
-@user_passes_test(apenas_admin)
+@login_required
 def home(request):
+    if not request.user.is_staff and not request.user.is_superuser:
+        return redirect('trading:dashboard_estruturas')
+    
     hoje = timezone.now().date()
     
     # Total de opções que ainda não venceram
