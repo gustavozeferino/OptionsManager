@@ -11,8 +11,11 @@ from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 import json
+import unicodedata
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Max
+from trading.models import Estrutura
+from trading.services import recalcular_estrutura
 
 def apenas_admin(user):
     return user.is_superuser
@@ -65,7 +68,13 @@ def clean_numeric(value):
     """Trata R$, pontos de milhar e vírgulas decimais."""
     if pd.isna(value) or str(value).strip() in ['', '-']:
         return 0.0
-    s = str(value).replace('R$', '').replace('.', '').replace(',', '.').strip()
+    s = str(value).replace('R$', '').strip()
+    
+    # Se tem vírgula, tratamos como formato BR (1.234,56 ou 1234,56)
+    if ',' in s:
+        s = s.replace('.', '').replace(',', '.')
+    # Se não tem vírgula, mantemos o ponto se ele existir (formato internacional 1234.56)
+    
     try:
         return float(s)
     except ValueError:
@@ -141,7 +150,8 @@ def upload_csv(request):
 
             if not ativo_queryset.exists():
                 AtivoB3.objects.create(codigo_isin=isin, **dados_csv)
-                relatorio['novos'] += 1
+                if isinstance(relatorio['novos'], int):
+                    relatorio['novos'] += 1
                 relatorio['logs'].append(f"NOVO: {dados_csv['ticker']} ({isin})")
             else:
                 ativo = ativo_queryset.first()
@@ -293,14 +303,22 @@ def upload_precos(request):
             # 2. LEITURA COMPLETA
             print(f"[2/4] Carregando Dataframe (skiprows={linha_cabecalho})...")
             
-            # Lê todo o conteúdo para um StringIO para evitar problemas com ponteiro de arquivo
-            content = file.read().decode('latin1')
+            # Tenta UTF-8-SIG primeiro (para arquivos modernos com BOM)
+            try:
+                file.seek(0)
+                content = file.read().decode('utf-8-sig')
+            except UnicodeDecodeError:
+                file.seek(0)
+                content = file.read().decode('latin1')
+                
             io_string = io.StringIO(content)
             
-            # Deixamos o pandas tentar detectar o separador automaticamente ou usamos o ';'
-            df = pd.read_csv(io_string, sep=';', skiprows=linha_cabecalho, engine='python', on_bad_lines='skip')
+            # Tenta detectar o separador (geralmente ; em CSVs brasileiros de Excel)
+            df = pd.read_csv(io_string, sep=None, skiprows=linha_cabecalho, engine='python', on_bad_lines='skip', dtype=str)
             
-            # Recalibra o nome da coluna ISIN após o novo mapeamento de colunas
+            print(f"--- Colunas encontradas no arquivo: {list(df.columns)}")
+
+            # Recalibra o nome da coluna ISIN
             coluna_isin = next((c for c in df.columns if 'ISIN' in c.upper()), None)
             print(f"--- Arquivo carregado: {len(df):,} linhas.")
             print(f"--- Coluna identificada: '{coluna_isin}'")
@@ -324,6 +342,44 @@ def upload_precos(request):
             # 4. GRAVAÇÃO ATÔMICA
             print(f"[3/4] Gravando {total_para_gravar} registros no banco...")
             relatorio = {'novos': 0, 'atualizados': 0, 'sem_alteracao': 0, 'logs': []}
+            
+            # Mapeamento robusto de colunas por palavras-chave com normalização de acentos
+            def normalize_str(s):
+                if not s: return ""
+                return "".join(
+                    c for c in unicodedata.normalize('NFD', str(s))
+                    if unicodedata.category(c) != 'Mn'
+                ).upper().strip()
+
+            def find_col(keywords, df_cols):
+                normalized_cols = {normalize_str(c): c for c in df_cols}
+                for k in keywords:
+                    norm_k = normalize_str(k)
+                    # Primeiro tenta match exato na coluna normalizada
+                    if norm_k in normalized_cols:
+                        return normalized_cols[norm_k]
+                    # Depois tenta match parcial
+                    for norm_c, original_c in normalized_cols.items():
+                        if norm_k in norm_c:
+                            return original_c
+                return None
+
+            col_abertura = find_col(['Preço de abertura', 'Abertura', 'ABR', 'PRECO ABR'], df.columns)
+            col_maximo = find_col(['Preço máximo', 'Máximo', 'MAXIMO', 'MAX', 'MAX.'], df.columns)
+            col_minimo = find_col(['Preço mínimo', 'Mínimo', 'MINIMO', 'MIN', 'MIN.'], df.columns)
+            col_fechamento = find_col(['Preço de fechamento', 'Fechamento', 'FECH', 'FECH.', 'Último', 'ULTIMO', 'ULT.', 'PRECO FECH'], df.columns)
+            col_ajuste = find_col(['Ajuste', 'AJUST.'], df.columns)
+            col_qtd_neg = find_col(['Quantidade de negócios', 'Negócios', 'NEGOCIOS', 'NEGOC.'], df.columns)
+            col_vol_fin = find_col(['Volume financeiro', 'Volume', 'VOL.', 'VOL FIN'], df.columns)
+            col_data_neg = find_col(['Data do negócio', 'Data'], df.columns)
+
+            print(f"--- Mapeamento:")
+            print(f"    - Abertura:   {col_abertura} (Exemplos: {df[col_abertura].head(2).tolist() if col_abertura else 'N/A'})")
+            print(f"    - Máximo:     {col_maximo} (Exemplos: {df[col_maximo].head(2).tolist() if col_maximo else 'N/A'})")
+            print(f"    - Mínimo:     {col_minimo} (Exemplos: {df[col_minimo].head(2).tolist() if col_minimo else 'N/A'})")
+            print(f"    - Fechamento: {col_fechamento} (Exemplos: {df[col_fechamento].head(2).tolist() if col_fechamento else 'N/A'})")
+
+            ativos_afetados = set()
 
             with transaction.atomic():
                 # Mapa de objetos para evitar milhares de queries
@@ -335,7 +391,7 @@ def upload_precos(request):
                         ativo_obj = mapa_objetos.get(isin)
                         
                         # Tratamento de Data (Coluna vs Manual)
-                        data_linha = row.get('Data do negócio')
+                        data_linha = row.get(col_data_neg) if col_data_neg else None
                         if pd.notna(data_linha) and str(data_linha).strip() != '-':
                             dt_pregao = pd.to_datetime(data_linha, dayfirst=True).date()
                         else:
@@ -346,20 +402,25 @@ def upload_precos(request):
                             ativo=ativo_obj,
                             data_pregao=dt_pregao,
                             defaults={
-                                'abertura': clean_numeric(row.get('Preço de abertura')),
-                                'maximo': clean_numeric(row.get('Preço máximo')),
-                                'minimo': clean_numeric(row.get('Preço mínimo')),
-                                'fechamento': clean_numeric(row.get('Preço de fechamento')),
-                                'ajuste': clean_numeric(row.get('Ajuste')),
-                                'quantidade_negocios': int(clean_numeric(row.get('Quantidade de negócios'))),
-                                'volume_financeiro': clean_numeric(row.get('Volume financeiro')),
+                                'abertura': clean_numeric(row.get(col_abertura)) if col_abertura else 0,
+                                'maximo': clean_numeric(row.get(col_maximo)) if col_maximo else 0,
+                                'minimo': clean_numeric(row.get(col_minimo)) if col_minimo else 0,
+                                'fechamento': clean_numeric(row.get(col_fechamento)) if col_fechamento else 0,
+                                'ajuste': clean_numeric(row.get(col_ajuste)) if col_ajuste else 0,
+                                'quantidade_negocios': int(clean_numeric(row.get(col_qtd_neg))) if col_qtd_neg else 0,
+                                'volume_financeiro': clean_numeric(row.get(col_vol_fin)) if col_vol_fin else 0,
                             }
                         )
                         
-                        if created:
-                            relatorio['novos'] += 1
+                        if ativo_obj:
+                            if created:
+                                relatorio['novos'] += 1
+                            else:
+                                relatorio['atualizados'] += 1
+                            
+                            ativos_afetados.add(ativo_obj.codigo_isin)
                         else:
-                            relatorio['atualizados'] += 1
+                            relatorio['logs'].append(f"Aviso: ISIN {isin} não encontrado no banco.")
 
                         if index % 100 == 0 or index == total_para_gravar:
                             print(f"    > Processado: {index}/{total_para_gravar} ({ (index/total_para_gravar)*100:.1f}%)")
@@ -367,6 +428,20 @@ def upload_precos(request):
                     except Exception as e:
                         relatorio['logs'].append(f"Erro na linha {index}: {e}")
                         continue
+
+            # 5. RECALCULAR ESTRUTURAS AFETADAS
+            if ativos_afetados:
+                print(f"[4/4] Recalculando estruturas afetadas...")
+                from trading.models import Estrutura
+                from trading.services import recalcular_estrutura
+                
+                estruturas_afetadas = Estrutura.objects.filter(posicoes__ativo_id__in=ativos_afetados).distinct()
+                total_est = estruturas_afetadas.count()
+                
+                for i, est in enumerate(estruturas_afetadas, 1):
+                    recalcular_estrutura(est)
+                    if i % 10 == 0 or i == total_est:
+                        print(f"    > Estruturas processadas: {i}/{total_est}")
 
             # Salva histórico final
             historico = HistoricoImportacao.objects.create(
@@ -474,4 +549,16 @@ def remover_historico_precos_duplicados(request):
     else:
         messages.info(request, "A base de dados de preços já está limpa e sem duplicidade.")
         
+    return redirect('core:home')
+
+@user_passes_test(apenas_admin)
+def recalcular_estruturas(request):
+    """Recalcula todas as estruturas de todos os usuários."""
+    estruturas = Estrutura.objects.all()
+    total = estruturas.count()
+    
+    for est in estruturas:
+        recalcular_estrutura(est)
+        
+    messages.success(request, f"Sucesso! {total} estruturas foram recalculadas.")
     return redirect('core:home')

@@ -120,11 +120,17 @@ def detalhe_estrutura(request, slug):
     from core.models import HistoricoPreco
     for pos in posicoes:
         if pos.quantidade_atual != 0:
-            hist = HistoricoPreco.objects.filter(ativo=pos.ativo, fechamento__gt=0).order_by('-data_pregao').first()
+            # Busca o preço mais recente que não seja zero
+            hist = HistoricoPreco.objects.filter(
+                ativo=pos.ativo, 
+                fechamento__gt=0
+            ).order_by('-data_pregao').first()
+            
             if hist:
                 pos.ultimo_preco = hist.fechamento
                 pos.data_ultimo_preco = hist.data_pregao
             else:
+                # Fallback para o preço médio se não houver cotação
                 pos.ultimo_preco = pos.preco_medio
                 pos.data_ultimo_preco = None
                 
