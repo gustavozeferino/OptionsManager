@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Dashboard de Trading - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-chart-pie me-2"></i> Dashboard de Trading</h2>
+    <div>
+        <a href="{% url 'trading:criar_estrutura' %}" class="btn btn-primary me-2">
+            <i class="fas fa-plus me-1"></i> Nova Estrutura
+        </a>
+        <a href="{% url 'trading:upload_ordens' %}" class="btn btn-outline-primary me-2">
+            <i class="fas fa-file-upload me-1"></i> Importar Ordens
+        </a>
+        <a href="{% url 'trading:alocar_orfas' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-exchange-alt me-1"></i> Ordens sem Estrutura
+        </a>
+    </div>
+</div>
+
+<!-- Resumo da Carteira -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary text-white shadow-sm border-0">
+            <div class="card-body text-center">
+                <h6 class="text-uppercase opacity-75">PL Aberto Total</h6>
+                <h3 class="mb-0">R$ {{ total_pl_aberto|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success text-white shadow-sm border-0">
+            <div class="card-body text-center">
+                <h6 class="text-uppercase opacity-75">PL Realizado Total</h6>
+                <h3 class="mb-0">R$ {{ total_pl_realizado|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-dark text-white shadow-sm border-0">
+            <div class="card-body text-center">
+                <h6 class="text-uppercase opacity-75">Valor Total Carteira</h6>
+                <h3 class="mb-0">R$ {{ valor_total_carteira|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráfico ECharts -->
+<div class="card shadow-sm border-0 mb-5">
+    <div class="card-body">
+        <h5 class="card-title">Evolução do Patrimônio</h5>
+        <div id="chart-patrimonio" style="width: 100%; height: 350px;"></div>
+    </div>
+</div>
+
+<!-- Lista de Estruturas -->
+<h4 class="mb-3">Minhas Estruturas</h4>
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nome da Estrutura</th>
+                        <th class="text-end">PL Aberto</th>
+                        <th class="text-end">PL Realizado</th>
+                        <th class="text-end">Valor Total</th>
+                        <th class="text-center">Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for est in estruturas %}
+                    <tr class="hover-lift-row">
+                        <td class="fw-bold text-primary">
+                            <i class="fas fa-layer-group me-2 text-muted"></i>{{ est.nome }}
+                        </td>
+                        <td
+                            class="text-end {% if est.pl_aberto > 0 %}text-success fw-bold{% elif est.pl_aberto < 0 %}text-danger fw-bold{% endif %}">
+                            R$ {{ est.pl_aberto|floatformat:2|intcomma }}
+                        </td>
+                        <td
+                            class="text-end {% if est.pl_realizado > 0 %}text-success fw-bold{% elif est.pl_realizado < 0 %}text-danger fw-bold{% endif %}">
+                            R$ {{ est.pl_realizado|floatformat:2|intcomma }}
+                        </td>
+                        <td class="text-end fw-bold">
+                            R$ {{ est.valor_total|floatformat:2|intcomma }}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'trading:detalhe_estrutura' est.slug %}"
+                                class="btn btn-sm btn-outline-primary">
+                                Detalhes
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-4 text-muted">
+                            Nenhuma estrutura criada. <a href="{% url 'trading:criar_estrutura' %}"
+                                class="alert-link">Crie sua primeira estrutura</a> ou importe ordens de corretagem.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<!-- ECharts -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        var chartDom = document.getElementById('chart-patrimonio');
+        var myChart = echarts.init(chartDom);
+        var option;
+
+        const rawDatas = '{{ datas_chart|escapejs }}';
+        const rawValores = '{{ valores_chart|escapejs }}';
+
+        let datas = [];
+        let valores = [];
+
+        try {
+            datas = JSON.parse(rawDatas);
+            valores = JSON.parse(rawValores);
+        } catch (e) {
+            console.error("Erro ao fazer parse dos dados do gráfico", e);
+        }
+
+        if (datas.length === 0) {
+            chartDom.innerHTML = '<div class="d-flex h-100 justify-content-center align-items-center text-muted">Sem dados suficientes para o gráfico</div>';
+            return;
+        }
+
+        option = {
+            tooltip: {
+                trigger: 'axis',
+                formatter: function (params) {
+                    let val = params[0].value;
+                    let numStr = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+                    return `${params[0].axisValue}<br/>${params[0].marker} Valor: <b>${numStr}</b>`;
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: datas
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: function (value) {
+                        return 'R$ ' + value;
+                    }
+                }
+            },
+            series: [
+                {
+                    name: 'Patrimônio',
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: {
+                        color: '#0d6efd',
+                        width: 3
+                    },
+                    itemStyle: {
+                        color: '#0d6efd'
+                    },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(13, 110, 253, 0.5)' },
+                            { offset: 1, color: 'rgba(13, 110, 253, 0.1)' }
+                        ])
+                    },
+                    data: valores
+                }
+            ]
+        };
+
+        option && myChart.setOption(option);
+
+        // Responsividade
+        window.addEventListener('resize', function () {
+            myChart.resize();
+        });
+    });
+</script>
+<style>
+    .hover-lift {
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+
+    .hover-lift:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15) !important;
+    }
+</style>
+{% endblock %}

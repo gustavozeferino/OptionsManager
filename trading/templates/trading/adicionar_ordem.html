@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Adicionar Ordem - {{ estrutura.nome }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0 mt-4">
+            <div class="card-header bg-dark text-white py-3">
+                <h4 class="mb-0"><i class="fas fa-plus-circle me-2"></i>Nova Ordem: {{ estrutura.nome }}</h4>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" autocomplete="off">
+                    {% csrf_token %}
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.data.id_for_label }}" class="form-label fw-bold">Data do Pregão</label>
+                            {{ form.data }}
+                            {% if form.data.errors %}
+                            <div class="text-danger small">{{ form.data.errors }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3 position-relative">
+                            <label for="{{ form.ativo_input.id_for_label }}" class="form-label fw-bold">Ativo</label>
+                            {{ form.ativo_input }}
+                            <ul id="ativo-suggestions" class="list-group position-absolute w-100 shadow-sm"
+                                style="display: none; max-height: 250px; overflow-y: auto; z-index: 1000; top: 100%;">
+                            </ul>
+                            {% if form.ativo_input.errors %}
+                            <div class="text-danger small">{{ form.ativo_input.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.quantidade.id_for_label }}" class="form-label fw-bold">Quantidade (+
+                                Compra / - Venda)</label>
+                            {{ form.quantidade }}
+                            {% if form.quantidade.errors %}
+                            <div class="text-danger small">{{ form.quantidade.errors }} </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.preco.id_for_label }}" class="form-label fw-bold">Preço Unitário</label>
+                            <div class="input-group">
+                                <span class="input-group-text">R$</span>
+                                {{ form.preco }}
+                            </div>
+                            {% if form.preco.errors %}
+                            <div class="text-danger small">{{ form.preco.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info py-2 mt-2">
+                        <i class="fas fa-info-circle me-2"></i>
+                        As posições e resultados da estrutura serão recalculados automaticamente após o salvamento.
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                        <a href="{% url 'trading:detalhe_estrutura' estrutura.slug %}"
+                            class="btn btn-outline-secondary px-4 me-md-2">Cancelar</a>
+                        <button type="submit" name="salvar_e_adicionar" value="1"
+                            class="btn btn-primary px-4 me-md-2">Salvar e Adicionar Outra</button>
+                        <button type="submit" class="btn btn-success px-4">Salvar Ordem</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% block extra_js %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const inputAtivo = document.getElementById("id_ativo_input");
+        const suggestionsBox = document.getElementById("ativo-suggestions");
+        let debounceTimer;
+
+        inputAtivo.addEventListener("input", function () {
+            clearTimeout(debounceTimer);
+            const query = this.value.trim().toUpperCase();
+
+            // Converter sempre para maiúsculas para facilitar a digitação do ticker
+            this.value = query;
+
+            if (query.length >= 5) {
+                debounceTimer = setTimeout(() => {
+                    fetch(`{% url 'trading:api_buscar_ativos' %}?q=${encodeURIComponent(query)}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            suggestionsBox.innerHTML = "";
+                            if (data.results && data.results.length > 0) {
+                                data.results.forEach(item => {
+                                    const li = document.createElement("li");
+                                    li.className = "list-group-item list-group-item-action cursor-pointer";
+                                    li.textContent = item.text;
+                                    li.style.cursor = "pointer";
+                                    li.onclick = function () {
+                                        // item.text is something like "PETR4 - PETROBRAS PN"
+                                        // We just want the ticker part "PETR4"
+                                        inputAtivo.value = item.text.split(" - ")[0];
+                                        suggestionsBox.style.display = "none";
+                                    };
+                                    suggestionsBox.appendChild(li);
+                                });
+                                suggestionsBox.style.display = "block";
+                            } else {
+                                const li = document.createElement("li");
+                                li.className = "list-group-item text-muted";
+                                li.textContent = "Nenhum ativo encontrado.";
+                                suggestionsBox.appendChild(li);
+                                suggestionsBox.style.display = "block";
+                            }
+                        })
+                        .catch(err => console.error("Erro ao buscar ativos:", err));
+                }, 300); // 300ms de debounce
+            } else {
+                suggestionsBox.style.display = "none";
+                suggestionsBox.innerHTML = "";
+            }
+        });
+
+        // Fechar as sugestões caso o usuário clique fora da caixa
+        document.addEventListener("click", function (e) {
+            if (e.target !== inputAtivo && e.target !== suggestionsBox) {
+                suggestionsBox.style.display = "none";
+            }
+        });
+    });
+</script>
+{% endblock extra_js %}
+{% endblock %}

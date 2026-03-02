@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'django_htmx',
     'users',
     'core',
+    'trading',
 ]
 
 MIDDLEWARE = [

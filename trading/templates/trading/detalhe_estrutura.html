@@ -1,0 +1,320 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Detalhe: {{ estrutura.nome }} - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <i class="fas fa-layer-group me-2"></i> {{ estrutura.nome }}
+        {% if estrutura.slug == 'sem-estrutura' %}
+        <span class="badge bg-secondary fs-6 align-middle ms-2">Padrão</span>
+        {% endif %}
+    </h2>
+    <div>
+        <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Voltar
+        </a>
+        <a href="{% url 'trading:adicionar_ordem_manual' slug=estrutura.slug %}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i> Nova Ordem
+        </a>
+    </div>
+</div>
+
+<!-- Header Stats -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1">PL Realizado</h6>
+                <h4
+                    class="mb-0 {% if estrutura.pl_realizado > 0 %}text-success{% elif estrutura.pl_realizado < 0 %}text-danger{% endif %}">
+                    R$ {{ estrutura.pl_realizado|floatformat:2|intcomma }}
+                </h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1">PL Aberto</h6>
+                <h4
+                    class="mb-0 {% if estrutura.pl_aberto > 0 %}text-success{% elif estrutura.pl_aberto < 0 %}text-danger{% endif %}">
+                    R$ {{ estrutura.pl_aberto|floatformat:2|intcomma }}
+                </h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 bg-light">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1">PL Total</h6>
+                <h4 class="mb-0">
+                    R$ {{ estrutura.valor_total|floatformat:2|intcomma }}
+                </h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1">Status</h6>
+                <h4 class="mb-0 text-primary">Ativa</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Tabela de Posições (Esquerda) -->
+    <div class="col-lg-7 mb-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white pt-3 pb-2">
+                <h5 class="card-title mb-0"><i class="fas fa-briefcase me-2"></i> Posições Consolidadas</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Ativo</th>
+                                <th class="text-end">Strike</th>
+                                <th class="text-end">Qtd</th>
+                                <th class="text-end">Preço Médio</th>
+                                <th class="text-end">Último Preço</th>
+                                <th class="text-end">Data Último Preço</th>
+                                <th class="text-end">PL Realizado</th>
+                                <th class="text-end">PL Aberto</th>
+                                <th class="text-end">PL Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pos in posicoes %}
+                            <tr>
+                                <td class="fw-bold">{{ pos.ativo.ticker }}</td>
+                                <td class="text-end">
+                                    {% if pos.ativo.preco_exercicio %}
+                                    R$ {{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <span
+                                        class="badge {% if pos.quantidade_atual > 0 %}bg-success{% elif pos.quantidade_atual < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
+                                        {{ pos.quantidade_atual }}
+                                    </span>
+                                </td>
+                                <td class="text-end">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    {{ pos.ultimo_preco|floatformat:2|intcomma }}
+                                </td>
+                                <td class="text-end">
+                                    {% if pos.data_ultimo_preco %}
+                                    {{ pos.data_ultimo_preco|date:"d/m/y" }}
+                                    {% endif %}
+                                </td>
+                                <td
+                                    class="text-end {% if pos.pl_realizado_acumulado > 0 %}text-success{% elif pos.pl_realizado_acumulado < 0 %}text-danger{% endif %}">
+                                    R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
+                                </td>
+                                <td
+                                    class="text-end {% if pos.pl_aberto_calc > 0 %}text-success{% elif pos.pl_aberto_calc < 0 %}text-danger{% endif %}">
+                                    R$ {{ pos.pl_aberto_calc|floatformat:2|intcomma }}
+                                </td>
+                                <td
+                                    class="text-end fw-bold {% if pos.pl_total > 0 %}text-success{% elif pos.pl_total < 0 %}text-danger{% endif %}">
+                                    R$ {{ pos.pl_total|floatformat:2|intcomma }}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">Nenhuma posição ativa nesta
+                                    estrutura.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráfico (Direita) -->
+    <div class="col-lg-5 mb-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white pt-3 pb-2">
+                <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i> Evolução Diária</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-estrutura" style="width: 100%; height: 300px;"></div>
+
+                <hr class="my-4">
+
+                <h6 class="card-title text-muted mb-3"><i class="fas fa-table me-2"></i> Tabela de Dados (Debug)</h6>
+                <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                    <table class="table table-sm table-hover table-striped mb-0 align-middle"
+                        style="font-size: 0.85rem;">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Data</th>
+                                <th class="text-end">Vlr Total</th>
+                                <th class="text-end">Realizado</th>
+                                <th class="text-end">Aberto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for snap in snapshots reversed %}
+                            <tr>
+                                <td>{{ snap.data|date:"d/m/Y" }}</td>
+                                <td class="text-end">R$ {{ snap.valor_total|floatformat:2|intcomma }}</td>
+                                <td class="text-end text-muted">R$ {{ snap.pl_realizado|floatformat:2|intcomma }}</td>
+                                <td class="text-end text-muted">R$ {{ snap.pl_aberto|floatformat:2|intcomma }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-2">Nenhum dado salvo ainda.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabela de Ordens -->
+<div class="card shadow-sm border-0 mb-5">
+    <div class="card-header bg-white pt-3 pb-2 d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0"><i class="fas fa-list me-2"></i> Histórico de Ordens</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Data</th>
+                        <th>Ativo</th>
+                        <th class="text-end">Strike</th>
+                        <th class="text-center">Vencimento</th>
+                        <th class="text-center">Operação</th>
+                        <th class="text-end">Qtd</th>
+                        <th class="text-end">Preço</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ordem in ordens %}
+                    <tr>
+                        <td>{{ ordem.data|date:"d/m/Y" }}</td>
+                        <td class="fw-bold">{{ ordem.ativo.ticker }}</td>
+                        <td class="text-end">
+                            {% if ordem.ativo.preco_exercicio %}
+                            R$ {{ ordem.ativo.preco_exercicio|floatformat:2|intcomma }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if ordem.ativo.data_expiracao %}
+                            {{ ordem.ativo.data_expiracao|date:"d/m/Y" }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if ordem.quantidade > 0 %}
+                            <span
+                                class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">COMPRA</span>
+                            {% else %}
+                            <span
+                                class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">VENDA</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ ordem.quantidade|stringformat:"i"|cut:"-" }}</td>
+                        <td class="text-end">R$ {{ ordem.preco|floatformat:2|intcomma }}</td>
+                        <td class="text-end text-muted">
+                            R$ {{ ordem.total_valor|floatformat:2|intcomma }}
+                        </td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-secondary" title="Editar" disabled><i
+                                    class="fas fa-edit"></i></button>
+                            <form method="post" action="{% url 'trading:excluir_ordem' ordem.id %}" class="d-inline"
+                                onsubmit="return confirm('Tem certeza que deseja excluir esta ordem? O recálculo será feito automaticamente.');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir"><i
+                                        class="fas fa-trash-alt"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">Nenhuma ordem registrada.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+
+
+{% block extra_js %}
+<!-- ECharts -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        var chartDom = document.getElementById('chart-estrutura');
+
+        // Parse explicit string array to prevent JS execution errors
+        const rawDatas = '{{ datas_chart|escapejs }}';
+        const rawValores = '{{ valores_chart|escapejs }}';
+
+        let datas = [];
+        let valores = [];
+
+        try {
+            datas = JSON.parse(rawDatas);
+            valores = JSON.parse(rawValores);
+        } catch (e) {
+            console.error("Erro ao fazer parse dos dados do gráfico", e);
+        }
+
+        if (datas.length === 0) {
+            chartDom.innerHTML = '<div class="d-flex h-100 justify-content-center align-items-center text-muted">Sem dados suficientes para o gráfico</div>';
+            return;
+        }
+
+        var myChart = echarts.init(chartDom);
+        var option = {
+            tooltip: { trigger: 'axis' },
+            grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+            xAxis: { type: 'category', boundaryGap: false, data: datas },
+            yAxis: { type: 'value' },
+            series: [{
+                name: 'Total',
+                type: 'line',
+                smooth: true,
+                lineStyle: { width: 3, color: '#198754' },
+                itemStyle: { color: '#198754' },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(25, 135, 84, 0.5)' },
+                        { offset: 1, color: 'rgba(25, 135, 84, 0.1)' }
+                    ])
+                },
+                data: valores
+            }]
+        };
+
+        option && myChart.setOption(option);
+        window.addEventListener('resize', function () { myChart.resize(); });
+    });
+</script>
+{% endblock %}
