@@ -5,6 +5,8 @@ from django.db.models import Sum
 from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot
 from .forms import EstruturaForm
 import json
+from .services import importar_ordens_profit
+
 
 @login_required
 def criar_estrutura(request):
@@ -166,29 +168,34 @@ from .services import processar_upload_csv
 
 @login_required
 def upload_ordens(request):
-    """
-    Recebe CSV com histórico de ordens (Clear/B3) e aloca na 'Sem Estrutura'.
-    """
-    if request.method == 'POST' and request.FILES.get('csv_file'):
-        csv_file = request.FILES['csv_file']
+    if request.method == 'POST':
+        print("\n=== POST RECEBIDO NA VIEW ===")
+        csv_file = request.FILES.get('csv_file')
+        source = request.POST.get('source_type')
         
-        if not csv_file.name.endswith('.csv'):
-            messages.error(request, 'Este não é um arquivo CSV válido.')
+        print(f"Arquivo recebido: {csv_file}")
+        print(f"Origem selecionada: {source}")
+
+        if not csv_file:
+            messages.error(request, "Nenhum arquivo enviado.")
             return redirect('trading:upload_ordens')
-            
-        sucesso, erros = processar_upload_csv(csv_file, request.user)
+
+        # Chamada da nossa função de serviço com os prints
+        from .services import importar_ordens_profit
         
-        if sucesso > 0:
-            messages.success(request, f"{sucesso} ordens foram importadas e adicionadas à 'Sem Estrutura'.")
+        total, erros = importar_ordens_profit(request.user, csv_file)
+
+        if total > 0:
+            messages.success(request, f"Sucesso! {total} ordens importadas.")
         
         if erros:
-            for erro in erros[:5]: # Mostra no máximo 5 erros para não poluir
-                messages.warning(request, erro)
-            if len(erros) > 5:
-                messages.warning(request, f"... e mais {len(erros) - 5} erros ignorados.")
-                
+            for erro in erros[:10]:  # Mostra apenas os 10 primeiros na tela
+                messages.error(request, erro)
+            if len(erros) > 10:
+                messages.warning(request, f"Há mais {len(erros) - 10} mensagens de erro ocultas.")
+
         return redirect('trading:dashboard_estruturas')
-        
+
     return render(request, 'trading/upload_ordens.html')
 
 @login_required
@@ -234,3 +241,127 @@ def excluir_ordem(request, ordem_id):
         return redirect('trading:detalhe_estrutura', slug=estrutura_slug)
     
     return redirect('trading:dashboard_estruturas')
+
+import io
+import csv
+import logging
+from decimal import Decimal
+from datetime import datetime
+from django.db import transaction
+from django.utils.timezone import make_aware
+from core.models import AtivoB3
+from trading.models import Ordem, Estrutura
+
+logger = logging.getLogger(__name__)
+import io
+import csv
+from decimal import Decimal
+from datetime import datetime
+from django.db import transaction
+from django.utils.timezone import make_aware
+
+@login_required
+def importar_ordens_profit(user, csv_file):
+    print("\n--- INICIANDO IMPORTAÇÃO ---")
+    raw_data = csv_file.read()
+    
+    try:
+        content = raw_data.decode('utf-8')
+        print("Codificação detectada: UTF-8")
+    except UnicodeDecodeError:
+        content = raw_data.decode('iso-8859-1')
+        print("Codificação detectada: ISO-8859-1 (Latin-1)")
+
+    lines = content.splitlines()
+    print(f"Total de linhas lidas no arquivo: {len(lines)}")
+
+    # 1. Debug do cabeçalho
+    header_index = -1
+    for i, line in enumerate(lines):
+        if 'Ativo;' in line and 'Status;' in line:
+            header_index = i
+            print(f"Cabeçalho encontrado na linha {i+1}: {line[:50]}...")
+            break
+    
+    if header_index == -1:
+        print("ERRO: Cabeçalho não encontrado! Verifique o delimitador ou nomes das colunas.")
+        return 0, ["Cabeçalho do Profit não encontrado."]
+
+    # 2. Lendo os dados
+    f = io.StringIO('\n'.join(lines[header_index:]))
+    reader = csv.DictReader(f, delimiter=';')
+    
+    ordens_para_criar = []
+    erros = []
+    
+    from trading.models import Estrutura, Ordem, AtivoB3
+    estrutura_placeholder, _ = Estrutura.objects.get_or_create(
+        usuario=user, nome="Sem Estrutura", defaults={'slug': 'sem-estrutura'}
+    )
+
+    print("Iniciando processamento das linhas...")
+    with transaction.atomic():
+        for row_num, row in enumerate(reader, start=header_index + 2):
+            # Print de cada linha para ver o que o DictReader capturou
+            status = row.get('Status', '').strip()
+            ativo_nome = row.get('Ativo', '').strip()
+            
+            print(f"Linha {row_num}: Ativo={ativo_nome} | Status={status}")
+
+            if status != 'Executada':
+                print(f"   -> Ignorada: Status '{status}' não é 'Executada'")
+                continue
+
+            try:
+                # Busca Ativo
+                try:
+                    ativo = AtivoB3.objects.get(ticker=ativo_nome)
+                except AtivoB3.DoesNotExist:
+                    msg = f"Ativo '{ativo_nome}' não existe no banco de dados."
+                    print(f"   -> ERRO: {msg}")
+                    erros.append(f"Linha {row_num}: {msg}")
+                    continue
+
+                # Parse de valores
+                def parse_decimal(text):
+                    if not text or text == '-': return Decimal('0.00')
+                    return Decimal(text.replace('.', '').replace(',', '.'))
+
+                preco = parse_decimal(row['Preço'])
+                qtd_raw = row['Qtd'].replace('.', '')
+                qtd_total = int(qtd_raw)
+                
+                lado = row['Lado'].strip().upper()
+                quantidade = -abs(qtd_total) if lado == 'V' else abs(qtd_total)
+
+                dt_str = row['Criação'].strip()
+                dt_obj = datetime.strptime(dt_str, '%d/%m/%Y %H:%M:%S')
+                dt_aware = make_aware(dt_obj)
+
+                ordem = Ordem(
+                    estrutura=estrutura_placeholder,
+                    ativo=ativo,
+                    quantidade=quantidade,
+                    preco=preco,
+                    data=dt_aware.date(),
+                    criado_em=dt_aware,
+                    is_opening=True
+                )
+                ordens_para_criar.append(ordem)
+                print(f"   -> OK: Ordem preparada ({lado} {abs(quantidade)} de {ativo_nome})")
+
+            except Exception as e:
+                print(f"   -> ERRO CRÍTICO na linha {row_num}: {str(e)}")
+                erros.append(f"Linha {row_num}: {str(e)}")
+
+        if ordens_para_criar:
+            print(f"Salvando {len(ordens_para_criar)} ordens no banco...")
+            Ordem.objects.bulk_create(ordens_para_criar)
+            
+            from .services import recalcular_estrutura
+            recalcular_estrutura(estrutura_placeholder)
+            print("Importação concluída com sucesso.")
+        else:
+            print("Nenhuma ordem válida foi encontrada para importação.")
+
+    return len(ordens_para_criar), erros

@@ -37,7 +37,7 @@
                             <span class="badge bg-danger-subtle text-danger">VENDA</span>
                             {% endif %}
                         </td>
-                        <td class="text-end">{{ ordem.quantidade|abs }}</td>
+                        <td class="text-end">{{ ordem.qtd_abs }}</td>
                         <td class="text-end">R$ {{ ordem.preco|floatformat:2|intcomma }}</td>
                         <td style="width: 30%;">
                             <form method="post" class="d-flex align-items-center">

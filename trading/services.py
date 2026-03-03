@@ -4,6 +4,9 @@ from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot
 from core.models import HistoricoPreco, AtivoB3
 from datetime import date
 from decimal import Decimal
+import io
+import csv
+
 
 def recalcular_posicao(estrutura, ativo):
     """
@@ -219,9 +222,7 @@ def recalcular_estrutura(estrutura, data_base=None):
         estrutura.valor_total = last.valor_total
         estrutura.save(update_fields=['pl_realizado', 'pl_aberto', 'valor_total'])
 
-import csv
-import io
-from datetime import datetime
+
 
 def processar_upload_csv(file, usuario):
     """
@@ -297,3 +298,107 @@ def processar_upload_csv(file, usuario):
                 erros.append(f"Linha {i}: Erro de formatação - {str(e)}")
                 
     return sucesso, erros
+
+def importar_ordens_profit(user, csv_file):
+    print("\n" + "="*40)
+    print("DEBUG: FUNCAO IMPORTAR_ORDENS_PROFIT INICIADA")
+    print("="*40)
+    
+    # Lê os bytes puros primeiro
+    raw_data = csv_file.read()
+    
+    # Tenta decodificar de forma resiliente
+    try:
+        content = raw_data.decode('utf-8')
+        print("DEBUG: Decodificado com UTF-8")
+    except UnicodeDecodeError:
+        content = raw_data.decode('iso-8859-1')
+        print("DEBUG: Decodificado com ISO-8859-1 (Latin-1)")
+
+    lines = content.splitlines()
+    print(f"DEBUG: Total de linhas no arquivo: {len(lines)}")
+    
+    # Se o arquivo estiver vazio após o read, é porque o ponteiro do arquivo já estava no fim
+    if not lines:
+        print("DEBUG: Arquivo vazio ou ponteiro no fim. Tentando resetar ponteiro...")
+        csv_file.seek(0)
+        raw_data = csv_file.read()
+        content = raw_data.decode('iso-8859-1', errors='ignore')
+        lines = content.splitlines()
+
+    # Localizar o cabeçalho
+    header_index = -1
+    for i, line in enumerate(lines):
+        if 'Ativo;' in line and 'Status;' in line:
+            header_index = i
+            break
+    
+    if header_index == -1:
+        print("DEBUG: ERRO - Cabecalho 'Ativo;Status' nao encontrado!")
+        return 0, ["Cabecalho do Profit nao encontrado."]
+
+    print(f"DEBUG: Cabecalho encontrado na linha {header_index + 1}")
+
+    import io
+    import csv
+    from decimal import Decimal
+    from datetime import datetime
+    from django.db import transaction
+    from django.utils.timezone import make_aware
+    from trading.models import Estrutura, Ordem, AtivoB3
+
+    f = io.StringIO('\n'.join(lines[header_index:]))
+    reader = csv.DictReader(f, delimiter=';')
+    
+    ordens_para_criar = []
+    erros = []
+    
+    # Garantir estrutura
+    est, _ = Estrutura.objects.get_or_create(usuario=user, nome="Sem Estrutura")
+
+    with transaction.atomic():
+        for row_num, row in enumerate(reader, start=header_index + 2):
+            # Limpar espaços dos nomes das colunas
+            row = {k.strip(): v.strip() for k, v in row.items() if k}
+            
+            status = row.get('Status', '')
+            ativo_ticker = row.get('Ativo', '')
+            
+            print(f"DEBUG: Processando Linha {row_num} - Ativo: {ativo_ticker} - Status: {status}")
+
+            if status != 'Executada':
+                continue
+
+            try:
+                ativo_obj = AtivoB3.objects.get(ticker=ativo_ticker)
+                
+                # Preço e Qtd (Tratando formato PT-BR)
+                preco = Decimal(row['Preço'].replace('.', '').replace(',', '.'))
+                qtd = int(row['Qtd'].replace('.', ''))
+                
+                if row['Lado'].upper() == 'V':
+                    qtd = -abs(qtd)
+
+                dt_obj = datetime.strptime(row['Criação'], '%d/%m/%Y %H:%M:%S')
+                
+                ordens_para_criar.append(Ordem(
+                    estrutura=est,
+                    ativo=ativo_obj,
+                    quantidade=qtd,
+                    preco=preco,
+                    data=dt_obj.date(),
+                    criado_em=make_aware(dt_obj)
+                ))
+                print(f"DEBUG: --> OK: Ordem adicionada")
+            except AtivoB3.DoesNotExist:
+                print(f"DEBUG: --> ERRO: Ativo {ativo_ticker} nao cadastrado")
+                erros.append(f"Ativo {ativo_ticker} não cadastrado.")
+            except Exception as e:
+                print(f"DEBUG: --> ERRO: {str(e)}")
+                erros.append(f"Linha {row_num}: {str(e)}")
+
+        if ordens_para_criar:
+            Ordem.objects.bulk_create(ordens_para_criar)
+            print(f"DEBUG: {len(ordens_para_criar)} ordens salvas.")
+            
+    return len(ordens_para_criar), erros
