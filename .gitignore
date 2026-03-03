@@ -49,3 +49,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+input_data/profit_ordens.csv
+.agent/ai_prompt.md
+.agent/roadmap.md
+.agent/skill.md
