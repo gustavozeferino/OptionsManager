@@ -120,7 +120,7 @@ class AtivoB3(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.ticker} - {self.ativo_objeto}"
+        return f"{self.ticker} - {self.preco_exercicio}"
 
 class HistoricoImportacao(models.Model):
     data_importacao = models.DateTimeField(auto_now_add=True)

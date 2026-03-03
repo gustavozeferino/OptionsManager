@@ -61,3 +61,19 @@ Execute os testes com:
 ```bash
 python manage.py test
 ```
+
+# Próximos passos
+
+* Analisar pré-requisitos para colocar em produção no vecel
+* Implementar sistema de gestão de senha para o usuário (reset, etc.)
+* Colocar no log mensagens de erro
+* Identificar vencimento semanal ou mensal e colocar no banco de dados (ou criar uma tabela de vencimentos)
+
+## Página de opções
+* Colocar um menu de meses na parte de cima (menu horizontal). Quando o usuário escolhe um mês, mostrar os vencimentos dentro deste e selecionar por padrão o vencimento mensal.
+* Organizar as opções no formato de strike no meio, calls na direita e put na esquerda com último preço e última data negociado
+
+## Importação de ordens
+* Implementar importação via tabela de ordens do profit e
+* tabela gerada no site da B3
+

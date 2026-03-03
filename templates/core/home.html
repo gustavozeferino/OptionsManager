@@ -48,14 +48,19 @@
         </div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <a href="{% url 'core:upload_csv' %}" class="btn btn-light border w-100 py-3">
                         <i class="bi bi-plus-circle d-block fs-4"></i> Atualizar Ativos
                     </a>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <a href="{% url 'core:upload_precos' %}" class="btn btn-light border w-100 py-3">
                         <i class="bi bi-graph-up-arrow d-block fs-4"></i> Atualizar Pregão
+                    </a>
+                </div>
+                <div class="col-md-4">
+                    <a href="{% url 'core:recalcular_estruturas' %}" class="btn btn-light border w-100 py-3">
+                        <i class="bi bi-arrow-clockwise d-block fs-4"></i> Recalcular Estruturas
                     </a>
                 </div>
             </div>

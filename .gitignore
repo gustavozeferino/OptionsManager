@@ -41,6 +41,7 @@ db.sqlite3-journal
 *.swp
 *.swo
 *~
+.agent/
 
 # OS
 .DS_Store
@@ -50,6 +51,3 @@ Thumbs.db
 .env
 .env.local
 input_data/profit_ordens.csv
-.agent/ai_prompt.md
-.agent/roadmap.md
-.agent/skill.md
