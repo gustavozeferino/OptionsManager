@@ -14,35 +14,75 @@
     <div class="col-md-8">
         <div class="card shadow-sm border-0">
             <div class="card-body p-4">
-                <div class="alert alert-info">
+                <div class="alert alert-info shadow-sm">
                     <h5><i class="fas fa-info-circle me-2"></i>Como Funciona</h5>
-                    <p class="mb-0">
-                        Faça o upload de um arquivo CSV (ex: exportação da Clear ou B3). O arquivo deve conter colunas
-                        que identifiquem a <strong>Data</strong>, o <strong>Ativo</strong>, a
-                        <strong>Quantidade</strong> e o <strong>Preço</strong>.
+                    <p class="mb-2">
+                        Selecione o formato do arquivo e faça o upload. Todas as ordens serão alocadas inicialmente na
+                        estrutura <strong>"Sem Estrutura"</strong>.
                     </p>
-                    <hr>
-                    <p class="mb-0 small">
-                        <em>Nota:</em> Todas as ordens importadas serão alocadas temporariamente na pasta <strong>"Sem
-                            Estrutura"</strong>. Você poderá movê-las para outras estruturas posteriormente.
-                    </p>
+                    <ul class="mb-0 small">
+                        <li><strong>Profit:</strong> Importação direta do CSV da lista de ordens (separador ";").</li>
+                        <li><strong>Genérico / B3:</strong> Layout padrão (Data, Ativo, Qtd, Preço).</li>
+                    </ul>
                 </div>
 
                 <form method="post" enctype="multipart/form-data" class="mt-4">
                     {% csrf_token %}
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Origem do Arquivo</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check border p-3 rounded flex-fill hover-lift">
+                                <input class="form-check-input ms-0" type="radio" name="source_type" id="profit"
+                                    value="PROFIT" checked>
+                                <label class="form-check-label ms-4 fw-bold" for="profit">
+                                    <i class="fas fa-chart-line text-primary me-1"></i> Profit (Nelogica)
+                                </label>
+                            </div>
+                            <div class="form-check border p-3 rounded flex-fill hover-lift">
+                                <input class="form-check-input ms-0" type="radio" name="source_type" id="generic"
+                                    value="GENERIC">
+                                <label class="form-check-label ms-4 fw-bold" for="generic">
+                                    <i class="fas fa-file-alt text-secondary me-1"></i> B3 / Outros
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-4">
                         <label for="csv_file" class="form-label fw-bold">Arquivo CSV (.csv)</label>
                         <input class="form-control form-control-lg" type="file" id="csv_file" name="csv_file"
                             accept=".csv" required>
                     </div>
+
                     <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary btn-lg">
-                            <i class="fas fa-cloud-upload-alt me-2"></i> Processar Upload
+                        <button type="submit" class="btn btn-primary btn-lg shadow-sm">
+                            <i class="fas fa-cloud-upload-alt me-2"></i> Iniciar Processamento
                         </button>
                     </div>
                 </form>
             </div>
         </div>
+
+        <div class="card mt-4 border-0 bg-light text-muted">
+            <div class="card-body small">
+                <h6 class="fw-bold"><i class="fas fa-lightbulb me-1"></i> Dica Profit:</h6>
+                No Profit, vá em <strong>Negociação > Lista de Ordens</strong>, clique com o botão direito e selecione
+                <strong>Exportar CSV</strong>.
+            </div>
+        </div>
     </div>
 </div>
+
+<style>
+    .hover-lift {
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+
+    .hover-lift:hover {
+        background-color: #f8f9fa;
+        border-color: #0d6efd !important;
+    }
+</style>
 {% endblock %}

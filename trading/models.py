@@ -45,6 +45,10 @@ class Ordem(models.Model):
         tipo = "COMPRA" if self.quantidade > 0 else "VENDA"
         return f"{tipo} {abs(self.quantidade)} {self.ativo.ticker} @ {self.preco}"
     
+    @property
+    def qtd_abs(self):
+        return abs(self.quantidade)
+
     class Meta:
         verbose_name = "Ordem"
         verbose_name_plural = "Ordens"
