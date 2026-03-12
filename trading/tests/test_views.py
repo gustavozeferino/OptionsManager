@@ -36,7 +36,7 @@ class TradingViewsTestCase(TestCase):
         
         # Envia POST
         url = reverse('trading:upload_ordens')
-        response = self.client.post(url, {'csv_file': csv_file})
+        response = self.client.post(url, {'csv_file': csv_file, 'source_type': 'GENERIC'})
         
         # Deve redirecionar pro dashboard após importacao
         self.assertEqual(response.status_code, 302)

@@ -56,14 +56,17 @@
 </div>
 
 <!-- Lista de Estruturas -->
-<h4 class="mb-3">Minhas Estruturas</h4>
-<div class="card shadow-sm border-0 mb-4">
+<h4 class="mb-3 text-success"><i class="fas fa-play-circle me-2"></i> Estruturas Ativas</h4>
+<div class="card shadow-sm border-0 mb-5">
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover table-striped mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
                         <th>Nome da Estrutura</th>
+                        <th class="text-center">Início</th>
+                        <th class="text-center">Última Op.</th>
+                        <th class="text-center">Dias</th>
                         <th class="text-end">PL Aberto</th>
                         <th class="text-end">PL Realizado</th>
                         <th class="text-end">Valor Total</th>
@@ -71,17 +74,24 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for est in estruturas %}
+                    {% for est in estruturas_ativas %}
                     <tr class="hover-lift-row">
                         <td class="fw-bold text-primary">
                             <i class="fas fa-layer-group me-2 text-muted"></i>{{ est.nome }}
                         </td>
+                        <td class="text-center text-muted" style="font-size: 0.85rem;">
+                            {% if est.data_inicial %}{{ est.data_inicial|date:"d/m/y" }}{% else %}-{% endif %}
+                        </td>
+                        <td class="text-center text-muted" style="font-size: 0.85rem;">
+                            {% if est.data_final %}{{ est.data_final|date:"d/m/y" }}{% else %}-{% endif %}
+                        </td>
+                        <td class="text-center" style="font-size: 0.85rem;">{{ est.dias_estrutura }} d</td>
                         <td
                             class="text-end {% if est.pl_aberto > 0 %}text-success fw-bold{% elif est.pl_aberto < 0 %}text-danger fw-bold{% endif %}">
                             R$ {{ est.pl_aberto|floatformat:2|intcomma }}
                         </td>
                         <td
-                            class="text-end {% if est.pl_realizado > 0 %}text-success fw-bold{% elif est.pl_realizado < 0 %}text-danger fw-bold{% endif %}">
+                            class="text-end {% if est.pl_realizado > 0 %}text-success fw-bold{% elif est.pl_realizado < 0 %}text-danger{% endif %}">
                             R$ {{ est.pl_realizado|floatformat:2|intcomma }}
                         </td>
                         <td class="text-end fw-bold">
@@ -89,17 +99,56 @@
                         </td>
                         <td class="text-center">
                             <a href="{% url 'trading:detalhe_estrutura' est.slug %}"
-                                class="btn btn-sm btn-outline-primary">
-                                Detalhes
-                            </a>
+                                class="btn btn-sm btn-outline-primary">Detalhes</a>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="5" class="text-center py-4 text-muted">
-                            Nenhuma estrutura criada. <a href="{% url 'trading:criar_estrutura' %}"
-                                class="alert-link">Crie sua primeira estrutura</a> ou importe ordens de corretagem.
+                        <td colspan="8" class="text-center py-4 text-muted">Nenhuma estrutura ativa.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<h4 class="mb-3 text-muted"><i class="fas fa-check-circle me-2"></i> Estruturas Finalizadas</h4>
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nome da Estrutura</th>
+                        <th class="text-center">Início</th>
+                        <th class="text-center">Fim</th>
+                        <th class="text-center">Duração</th>
+                        <th class="text-end">VALOR FINAL</th>
+                        <th class="text-center">Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for est in estruturas_fechadas %}
+                    <tr class="text-muted">
+                        <td class="fw-bold">
+                            <i class="fas fa-archive me-2"></i>{{ est.nome }}
                         </td>
+                        <td class="text-center" style="font-size: 0.85rem;">{{ est.data_inicial|date:"d/m/y" }}</td>
+                        <td class="text-center" style="font-size: 0.85rem;">{{ est.data_final|date:"d/m/y" }}</td>
+                        <td class="text-center" style="font-size: 0.85rem;">{{ est.dias_estrutura }} dias</td>
+                        <td
+                            class="text-end fw-bold {% if est.valor_total > 0 %}text-success{% elif est.valor_total < 0 %}text-danger{% endif %}">
+                            R$ {{ est.valor_total|floatformat:2|intcomma }}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'trading:detalhe_estrutura' est.slug %}"
+                                class="btn btn-sm btn-outline-secondary">Ver Histórico</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4 text-muted">Nenhuma estrutura finalizada.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

@@ -14,6 +14,17 @@ class Estrutura(models.Model):
     pl_aberto = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     valor_total = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     
+    STATUS_CHOICES = [
+        ('ABERTA', 'Aberta'),
+        ('FECHADA', 'Fechada'),
+    ]
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ABERTA')
+    
+    # Datas e Estatísticas
+    data_inicial = models.DateField(null=True, blank=True)
+    data_final = models.DateField(null=True, blank=True)
+    dias_estrutura = models.IntegerField(default=0)
+    
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 

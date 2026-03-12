@@ -11,6 +11,7 @@ urlpatterns = [
     # Detalhe da Estrutura
     path('estruturas/<slug:slug>/', views.detalhe_estrutura, name='detalhe_estrutura'),
     path('estruturas/<slug:slug>/adicionar-ordem/', views.adicionar_ordem, name='adicionar_ordem_manual'),
+    path('estruturas/<slug:slug>/alternar-status/', views.alternar_status_estrutura, name='alternar_status_estrutura'),
     
     # AJAX / API
     path('api/ativos/', views.buscar_ativos, name='api_buscar_ativos'),

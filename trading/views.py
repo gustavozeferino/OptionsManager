@@ -47,6 +47,11 @@ def adicionar_ordem(request, slug):
             ordem = form.save(commit=False)
             ordem.estrutura = estrutura
             ordem.save()
+            
+            # Recalcula a estrutura após alteração manual
+            from .services import recalcular_estrutura
+            recalcular_estrutura(estrutura)
+            
             messages.success(request, f"Ordem de {ordem.ativo.ticker} adicionada com sucesso!")
             
             if 'salvar_e_adicionar' in request.POST:
@@ -85,7 +90,16 @@ def dashboard_estruturas(request):
     """
     Exibe o resumo das estruturas do usuário (Painel Principal de Trading).
     """
+    # Filtra estruturas do usuário
     estruturas = Estrutura.objects.filter(usuario=request.user)
+    
+    # "Sem Estrutura" só aparece se tiver ordens
+    estrutura_sem_estrutura = estruturas.filter(slug='sem-estrutura').first()
+    if estrutura_sem_estrutura and not estrutura_sem_estrutura.ordens.exists():
+        estruturas = estruturas.exclude(slug='sem-estrutura')
+    
+    estruturas_ativas = estruturas.filter(status='ABERTA')
+    estruturas_fechadas = estruturas.filter(status='FECHADA')
     
     total_pl_realizado = estruturas.aggregate(Sum('pl_realizado'))['pl_realizado__sum'] or 0
     total_pl_aberto = estruturas.aggregate(Sum('pl_aberto'))['pl_aberto__sum'] or 0
@@ -100,7 +114,8 @@ def dashboard_estruturas(request):
     valores_chart = [float(obj['total_diario']) for obj in snapshots]
     
     context = {
-        'estruturas': estruturas,
+        'estruturas_ativas': estruturas_ativas,
+        'estruturas_fechadas': estruturas_fechadas,
         'total_pl_realizado': total_pl_realizado,
         'total_pl_aberto': total_pl_aberto,
         'valor_total_carteira': valor_total_carteira,
@@ -116,11 +131,11 @@ def detalhe_estrutura(request, slug):
     Exibe os detalhes de uma estrutura específica (Tabela de Posições, Tabela de Ordens).
     """
     estrutura = get_object_or_404(Estrutura, usuario=request.user, slug=slug)
-    posicoes = estrutura.posicoes.select_related('ativo').all()
-    ordens = estrutura.ordens.select_related('ativo').all()
+    posicoes_all = estrutura.posicoes.select_related('ativo').all()
+    ordens_all = estrutura.ordens.select_related('ativo').all()
     
     from core.models import HistoricoPreco
-    for pos in posicoes:
+    for pos in posicoes_all:
         if pos.quantidade_atual != 0:
             # Busca o preço mais recente que não seja zero
             hist = HistoricoPreco.objects.filter(
@@ -147,49 +162,92 @@ def detalhe_estrutura(request, slug):
             
         pos.pl_total = pos.pl_realizado_acumulado + pos.pl_aberto_calc
         
-    for o in ordens:
+    for o in ordens_all:
         o.total_valor = abs(o.quantidade) * o.preco
         
+    posicoes_abertas = [p for p in posicoes_all if p.quantidade_atual != 0]
+    posicoes_fechadas = [p for p in posicoes_all if p.quantidade_atual == 0]
+    
+    # Calcula datas para posições fechadas
+    for pos in posicoes_fechadas:
+        ordens_pos = Ordem.objects.filter(estrutura=estrutura, ativo=pos.ativo).order_by('data')
+        if ordens_pos.exists():
+            pos.data_inicial = ordens_pos.first().data
+            pos.data_final = ordens_pos.last().data
+            pos.dias = (pos.data_final - pos.data_inicial).days
+        else:
+            pos.data_inicial = pos.data_final = None
+            pos.dias = 0
+
+    from django.core.paginator import Paginator
+    paginator = Paginator(ordens_all, 20) # 20 ordens por página
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
     snapshots = estrutura.historico_snapshots.order_by('data')
     datas_chart = [obj.data.strftime('%d/%m/%Y') for obj in snapshots]
     valores_chart = [float(obj.valor_total) for obj in snapshots]
     
     context = {
         'estrutura': estrutura,
-        'posicoes': posicoes,
-        'ordens': ordens,
+        'posicoes_abertas': posicoes_abertas,
+        'posicoes_fechadas': posicoes_fechadas,
+        'page_obj': page_obj,
         'snapshots': snapshots,
         'datas_chart': json.dumps(datas_chart),
         'valores_chart': json.dumps(valores_chart),
+        'has_open_positions': len(posicoes_abertas) > 0,
     }
     return render(request, 'trading/detalhe_estrutura.html', context)
+
+@login_required
+def alternar_status_estrutura(request, slug):
+    """Alterna entre ABERTA e FECHADA."""
+    estrutura = get_object_or_404(Estrutura, usuario=request.user, slug=slug)
+    
+    if estrutura.status == 'ABERTA':
+        # Verifica se há posições abertas
+        if estrutura.posicoes.exclude(quantidade_atual=0).exists():
+            messages.error(request, "Não é possível fechar uma estrutura com posições abertas.")
+        else:
+            estrutura.status = 'FECHADA'
+            estrutura.save()
+            messages.success(request, f"Estrutura '{estrutura.nome}' fechada com sucesso.")
+    else:
+        estrutura.status = 'ABERTA'
+        estrutura.save()
+        messages.success(request, f"Estrutura '{estrutura.nome}' reaberta.")
+        
+    # Recalcula a estrutura para ajustar o gráfico e as estatísticas
+    from .services import recalcular_estrutura
+    recalcular_estrutura(estrutura)
+        
+    return redirect('trading:detalhe_estrutura', slug=estrutura.slug)
 
 from .services import processar_upload_csv
 
 @login_required
 def upload_ordens(request):
     if request.method == 'POST':
-        print("\n=== POST RECEBIDO NA VIEW ===")
         csv_file = request.FILES.get('csv_file')
         source = request.POST.get('source_type')
-        
-        print(f"Arquivo recebido: {csv_file}")
-        print(f"Origem selecionada: {source}")
 
         if not csv_file:
             messages.error(request, "Nenhum arquivo enviado.")
             return redirect('trading:upload_ordens')
 
-        # Chamada da nossa função de serviço com os prints
-        from .services import importar_ordens_profit
-        
-        total, erros = importar_ordens_profit(request.user, csv_file)
+        if source == 'PROFIT':
+            from .services import importar_ordens_profit
+            total, erros = importar_ordens_profit(request.user, csv_file)
+        else:
+            from .services import processar_upload_csv
+            total, erros = processar_upload_csv(csv_file, request.user)
 
         if total > 0:
             messages.success(request, f"Sucesso! {total} ordens importadas.")
         
         if erros:
-            for erro in erros[:10]:  # Mostra apenas os 10 primeiros na tela
+            for erro in erros[:10]:
                 messages.error(request, erro)
             if len(erros) > 10:
                 messages.warning(request, f"Há mais {len(erros) - 10} mensagens de erro ocultas.")
@@ -215,11 +273,17 @@ def alocar_ordens_orfas(request):
             
             ordem.estrutura = nova_est
             ordem.save()
+            
+            # Recalcula ambas as estruturas envolvidas
+            from .services import recalcular_estrutura
+            recalcular_estrutura(estrutura_padrao)
+            recalcular_estrutura(nova_est)
+            
             messages.success(request, f"Ordem movida para {nova_est.nome} com sucesso.")
             return redirect('trading:alocar_orfas')
     
     ordens_orfas = estrutura_padrao.ordens.all()
-    estruturas_ativas = Estrutura.objects.filter(usuario=request.user).exclude(slug='sem-estrutura')
+    estruturas_ativas = Estrutura.objects.filter(usuario=request.user, status='ABERTA').exclude(slug='sem-estrutura')
     
     context = {
         'ordens_orfas': ordens_orfas,

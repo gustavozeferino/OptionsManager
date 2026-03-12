@@ -2,7 +2,7 @@ from django.db import transaction
 from django.db.models import Sum
 from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot
 from core.models import HistoricoPreco, AtivoB3
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 import io
 import csv
@@ -102,6 +102,10 @@ def recalcular_estrutura(estrutura, data_base=None):
         max_date = max(max_ordem_date, max_hist_date)
     else:
         max_date = max(max_ordem_date, date.today())
+        
+    # Se a estrutura está FECHADA, o gráfico não deve ir além da última ordem
+    if estrutura.status == 'FECHADA':
+        max_date = max_ordem_date
         
     # Otimização: carregar todos os preços do intervalo
     historicos = HistoricoPreco.objects.filter(
@@ -220,7 +224,21 @@ def recalcular_estrutura(estrutura, data_base=None):
         estrutura.pl_realizado = last.pl_realizado
         estrutura.pl_aberto = last.pl_aberto
         estrutura.valor_total = last.valor_total
-        estrutura.save(update_fields=['pl_realizado', 'pl_aberto', 'valor_total'])
+        
+        # Datas e estatísticas
+        primeira_ordem = ordens[0].data
+        ultima_ordem = ordens[-1].data
+        estrutura.data_inicial = primeira_ordem
+        estrutura.data_final = ultima_ordem
+        
+        # Dias de vida da estrutura (da primeira até a última ordem)
+        delta = ultima_ordem - primeira_ordem
+        estrutura.dias_estrutura = delta.days
+        
+        # Se todos os snapshots tiverem PL Aberto zero e a quantidade for zero em todos ativos, 
+        # a estrutura pode ser considerada fechada se o usuário quiser, mas vamos manter a lógica de datas.
+        
+        estrutura.save(update_fields=['pl_realizado', 'pl_aberto', 'valor_total', 'data_inicial', 'data_final', 'dias_estrutura'])
 
 
 
@@ -249,7 +267,7 @@ def processar_upload_csv(file, usuario):
     erros = []
     
     with transaction.atomic():
-        for i, linha in enumerate(reader, start=2): # Start 2 para contar o header
+        for i, linha in enumerate(reader, start=2):
             try:
                 # Normaliza as chaves do dicionário (lowercase e sem espaços extras)
                 linha_clean = {k.lower().strip(): v for k, v in linha.items() if k}
@@ -297,6 +315,10 @@ def processar_upload_csv(file, usuario):
             except Exception as e:
                 erros.append(f"Linha {i}: Erro de formatação - {str(e)}")
                 
+                
+    if sucesso > 0:
+        recalcular_estrutura(estrutura_padrao)
+        
     return sucesso, erros
 
 def importar_ordens_profit(user, csv_file):
@@ -400,5 +422,6 @@ def importar_ordens_profit(user, csv_file):
         if ordens_para_criar:
             Ordem.objects.bulk_create(ordens_para_criar)
             print(f"DEBUG: {len(ordens_para_criar)} ordens salvas.")
+            recalcular_estrutura(est)
             
     return len(ordens_para_criar), erros

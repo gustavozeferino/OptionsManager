@@ -10,11 +10,30 @@
         {% if estrutura.slug == 'sem-estrutura' %}
         <span class="badge bg-secondary fs-6 align-middle ms-2">Padrão</span>
         {% endif %}
+        <span
+            class="badge {% if estrutura.status == 'ABERTA' %}bg-success{% else %}bg-danger{% endif %} fs-6 align-middle ms-2">
+            {{ estrutura.get_status_display }}
+        </span>
     </h2>
     <div>
         <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-outline-secondary">
             <i class="fas fa-arrow-left me-1"></i> Voltar
         </a>
+
+        <form action="{% url 'trading:alternar_status_estrutura' slug=estrutura.slug %}" method="post" class="d-inline">
+            {% csrf_token %}
+            {% if estrutura.status == 'ABERTA' %}
+            <button type="submit" class="btn btn-outline-warning" {% if has_open_positions %}disabled
+                title="Feche todas as posições antes de encerrar a estrutura" {% endif %}>
+                <i class="fas fa-archive me-1"></i> Fechar Estrutura
+            </button>
+            {% else %}
+            <button type="submit" class="btn btn-outline-success">
+                <i class="fas fa-unlock me-1"></i> Reabrir Estrutura
+            </button>
+            {% endif %}
+        </form>
+
         <a href="{% url 'trading:adicionar_ordem_manual' slug=estrutura.slug %}" class="btn btn-primary">
             <i class="fas fa-plus me-1"></i> Nova Ordem
         </a>
@@ -23,54 +42,82 @@
 
 <!-- Header Stats -->
 <div class="row mb-4">
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card shadow-sm border-0">
             <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1">PL Realizado</h6>
-                <h4
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">PL Realizado</h6>
+                <h5
                     class="mb-0 {% if estrutura.pl_realizado > 0 %}text-success{% elif estrutura.pl_realizado < 0 %}text-danger{% endif %}">
                     R$ {{ estrutura.pl_realizado|floatformat:2|intcomma }}
-                </h4>
+                </h5>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card shadow-sm border-0">
             <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1">PL Aberto</h6>
-                <h4
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">PL Aberto</h6>
+                <h5
                     class="mb-0 {% if estrutura.pl_aberto > 0 %}text-success{% elif estrutura.pl_aberto < 0 %}text-danger{% endif %}">
                     R$ {{ estrutura.pl_aberto|floatformat:2|intcomma }}
-                </h4>
+                </h5>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card shadow-sm border-0 bg-light">
             <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1">PL Total</h6>
-                <h4 class="mb-0">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">PL Total</h6>
+                <h5 class="mb-0">
                     R$ {{ estrutura.valor_total|floatformat:2|intcomma }}
-                </h4>
+                </h5>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card shadow-sm border-0">
             <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1">Status</h6>
-                <h4 class="mb-0 text-primary">Ativa</h4>
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">Início</h6>
+                <h5 class="mb-0">{% if estrutura.data_inicial %}{{ estrutura.data_inicial|date:"d/m/y" }}
+                    {% else %}-{% endif %}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">Última Op.</h6>
+                <h5 class="mb-0">{% if estrutura.data_final %}{{ estrutura.data_final|date:"d/m/y" }}
+                    {% else %}-{% endif %}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">Dias</h6>
+                <h5 class="mb-0">{{ estrutura.dias_estrutura }} dias</h5>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Gráfico de Evolução -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white pt-3 pb-2">
+        <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i> Evolução Diária</h5>
+    </div>
+    <div class="card-body">
+        <div id="chart-estrutura" style="width: 100%; height: 250px;"></div>
+    </div>
+</div>
+
 <div class="row">
-    <!-- Tabela de Posições (Esquerda) -->
-    <div class="col-lg-7 mb-4">
-        <div class="card shadow-sm border-0 h-100">
+    <!-- Posições Abertas -->
+    <div class="col-12 mb-4">
+        <div class="card shadow-sm border-0">
             <div class="card-header bg-white pt-3 pb-2">
-                <h5 class="card-title mb-0"><i class="fas fa-briefcase me-2"></i> Posições Consolidadas</h5>
+                <h5 class="card-title mb-0 text-success"><i class="fas fa-folder-open me-2"></i> Posições Abertas</h5>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -82,55 +129,45 @@
                                 <th class="text-end">Qtd</th>
                                 <th class="text-end">Preço Médio</th>
                                 <th class="text-end">Último Preço</th>
-                                <th class="text-end">Data Último Preço</th>
+                                <th class="text-end">Data Último</th>
                                 <th class="text-end">PL Realizado</th>
                                 <th class="text-end">PL Aberto</th>
                                 <th class="text-end">PL Total</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for pos in posicoes %}
+                            {% for pos in posicoes_abertas %}
                             <tr>
                                 <td class="fw-bold">{{ pos.ativo.ticker }}</td>
-                                <td class="text-end">
-                                    {% if pos.ativo.preco_exercicio %}
-                                    R$ {{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}
-                                    {% else %}
-                                    -
-                                    {% endif %}
-                                </td>
+                                <td class="text-end">{{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}</td>
                                 <td class="text-end">
                                     <span
                                         class="badge {% if pos.quantidade_atual > 0 %}bg-success{% elif pos.quantidade_atual < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
                                         {{ pos.quantidade_atual }}
                                     </span>
                                 </td>
-                                <td class="text-end">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
-                                <td class="text-end">
-                                    {{ pos.ultimo_preco|floatformat:2|intcomma }}
-                                </td>
-                                <td class="text-end">
+                                <td class="text-end">{{ pos.preco_medio|floatformat:2|intcomma }}</td>
+                                <td class="text-end">{{ pos.ultimo_preco|floatformat:2|intcomma }}</td>
+                                <td class="text-end text-muted">
                                     {% if pos.data_ultimo_preco %}
                                     {{ pos.data_ultimo_preco|date:"d/m/y" }}
-                                    {% endif %}
-                                </td>
+                                    {% endif %}</td>
                                 <td
                                     class="text-end {% if pos.pl_realizado_acumulado > 0 %}text-success{% elif pos.pl_realizado_acumulado < 0 %}text-danger{% endif %}">
-                                    R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
+                                    {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
                                 </td>
                                 <td
                                     class="text-end {% if pos.pl_aberto_calc > 0 %}text-success{% elif pos.pl_aberto_calc < 0 %}text-danger{% endif %}">
-                                    R$ {{ pos.pl_aberto_calc|floatformat:2|intcomma }}
+                                    {{ pos.pl_aberto_calc|floatformat:2|intcomma }}
                                 </td>
                                 <td
                                     class="text-end fw-bold {% if pos.pl_total > 0 %}text-success{% elif pos.pl_total < 0 %}text-danger{% endif %}">
-                                    R$ {{ pos.pl_total|floatformat:2|intcomma }}
+                                    {{ pos.pl_total|floatformat:2|intcomma }}
                                 </td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">Nenhuma posição ativa nesta
-                                    estrutura.</td>
+                                <td colspan="9" class="text-center text-muted py-4">Nenhuma posição ativa.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -140,40 +177,41 @@
         </div>
     </div>
 
-    <!-- Gráfico (Direita) -->
-    <div class="col-lg-5 mb-4">
-        <div class="card shadow-sm border-0 h-100">
+    <!-- Posições Fechadas -->
+    <div class="col-12 mb-4">
+        <div class="card shadow-sm border-0">
             <div class="card-header bg-white pt-3 pb-2">
-                <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i> Evolução Diária</h5>
+                <h5 class="card-title mb-0 text-muted"><i class="fas fa-folder me-2"></i> Posições Finalizadas</h5>
             </div>
-            <div class="card-body">
-                <div id="chart-estrutura" style="width: 100%; height: 300px;"></div>
-
-                <hr class="my-4">
-
-                <h6 class="card-title text-muted mb-3"><i class="fas fa-table me-2"></i> Tabela de Dados (Debug)</h6>
-                <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
-                    <table class="table table-sm table-hover table-striped mb-0 align-middle"
-                        style="font-size: 0.85rem;">
-                        <thead class="table-light sticky-top">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0 align-middle">
+                        <thead class="table-light">
                             <tr>
-                                <th>Data</th>
-                                <th class="text-end">Vlr Total</th>
-                                <th class="text-end">Realizado</th>
-                                <th class="text-end">Aberto</th>
+                                <th>Ativo</th>
+                                <th class="text-end">Preço Médio</th>
+                                <th class="text-end">PL Realizado</th>
+                                <th class="text-center">Início</th>
+                                <th class="text-center">Término</th>
+                                <th class="text-center">Duração</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for snap in snapshots reversed %}
+                            {% for pos in posicoes_fechadas %}
                             <tr>
-                                <td>{{ snap.data|date:"d/m/Y" }}</td>
-                                <td class="text-end">R$ {{ snap.valor_total|floatformat:2|intcomma }}</td>
-                                <td class="text-end text-muted">R$ {{ snap.pl_realizado|floatformat:2|intcomma }}</td>
-                                <td class="text-end text-muted">R$ {{ snap.pl_aberto|floatformat:2|intcomma }}</td>
+                                <td class="fw-bold">{{ pos.ativo.ticker }}</td>
+                                <td class="text-end">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
+                                <td
+                                    class="text-end fw-bold {% if pos.pl_realizado_acumulado > 0 %}text-success{% elif pos.pl_realizado_acumulado < 0 %}text-danger{% endif %}">
+                                    R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
+                                </td>
+                                <td class="text-center text-muted">{{ pos.data_inicial|date:"d/m/Y" }}</td>
+                                <td class="text-center text-muted">{{ pos.data_final|date:"d/m/Y" }}</td>
+                                <td class="text-center">{{ pos.dias }} dias</td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="4" class="text-center text-muted py-2">Nenhum dado salvo ainda.</td>
+                                <td colspan="6" class="text-center text-muted py-4">Nenhuma posição finalizada.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -206,23 +244,19 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for ordem in ordens %}
+                    {% for ordem in page_obj %}
                     <tr>
                         <td>{{ ordem.data|date:"d/m/Y" }}</td>
                         <td class="fw-bold">{{ ordem.ativo.ticker }}</td>
                         <td class="text-end">
                             {% if ordem.ativo.preco_exercicio %}
-                            R$ {{ ordem.ativo.preco_exercicio|floatformat:2|intcomma }}
-                            {% else %}
-                            -
-                            {% endif %}
+                            {{ ordem.ativo.preco_exercicio|floatformat:2|intcomma}}
+                            {% else %}-{% endif %}
                         </td>
                         <td class="text-center">
                             {% if ordem.ativo.data_expiracao %}
                             {{ ordem.ativo.data_expiracao|date:"d/m/Y" }}
-                            {% else %}
-                            -
-                            {% endif %}
+                            {% else %}-{% endif %}
                         </td>
                         <td class="text-center">
                             {% if ordem.quantidade > 0 %}
@@ -234,13 +268,9 @@
                             {% endif %}
                         </td>
                         <td class="text-end">{{ ordem.quantidade|stringformat:"i"|cut:"-" }}</td>
-                        <td class="text-end">R$ {{ ordem.preco|floatformat:2|intcomma }}</td>
-                        <td class="text-end text-muted">
-                            R$ {{ ordem.total_valor|floatformat:2|intcomma }}
-                        </td>
+                        <td class="text-end">{{ ordem.preco|floatformat:2|intcomma }}</td>
+                        <td class="text-end text-muted">{{ ordem.total_valor|floatformat:2|intcomma }}</td>
                         <td class="text-center">
-                            <button class="btn btn-sm btn-outline-secondary" title="Editar" disabled><i
-                                    class="fas fa-edit"></i></button>
                             <form method="post" action="{% url 'trading:excluir_ordem' ordem.id %}" class="d-inline"
                                 onsubmit="return confirm('Tem certeza que deseja excluir esta ordem? O recálculo será feito automaticamente.');">
                                 {% csrf_token %}
@@ -258,11 +288,31 @@
             </table>
         </div>
     </div>
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer bg-white border-top-0 py-3">
+        <nav aria-label="Navegação de ordens">
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page=1">&laquo; Primeira</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Anterior</a>
+                </li>
+                {% endif %}
+
+                <li class="page-item active"><span class="page-link">Página {{ page_obj.number }} de {{
+                        page_obj.paginator.num_pages }}</span></li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Próxima</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Última
+                        &raquo;</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
 </div>
 
 {% endblock %}
-
-
 
 {% block extra_js %}
 <!-- ECharts -->
@@ -317,4 +367,5 @@
         window.addEventListener('resize', function () { myChart.resize(); });
     });
 </script>
+
 {% endblock %}
