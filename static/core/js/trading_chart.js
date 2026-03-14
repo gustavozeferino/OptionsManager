@@ -3,35 +3,35 @@
  * Tema: Vintage | Estilo: Neutro com Volume Interativo
  */
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     const chartDom = document.getElementById('main-chart');
-    
+
     // Verifica se o container e os dados existem
     if (!chartDom || typeof chartData === 'undefined') {
         console.warn("Container do gráfico ou dados não encontrados.");
         return;
     }
 
-    // Inicializa com o tema Vintage
+    // Inicializa com o tema Macarons
     const myChart = echarts.init(chartDom, 'vintage');
 
     // Processamento de Dados
     const categoryData = chartData.ohlc.map(item => item.x);
-    const values = chartData.ohlc.map(item => item.y); 
-    
+    const values = chartData.ohlc.map(item => item.y);
+
     // volumes: [index, valor, sinal] onde sinal 1 = alta, -1 = baixa
     const volumes = chartData.volume.map((item, i) => [
-        i, 
-        item.y, 
+        i,
+        item.y,
         values[i][1] > values[i][0] ? 1 : -1
     ]);
 
-    // Paleta de Cores para o Hover (Sincronizada com o Tema Vintage)
+    // Paleta de Cores para o Hover (Sincronizada com o Tema Macarons)
     const colors = {
-        up: '#e63946',        // Vermelho/Coral do tema vintage para alta
-        down: '#1d3557',      // Azul escuro do tema vintage para baixa
-        volNeutral: 'rgba(180, 180, 180, 0.4)', // Cinza neutro e suave
-        axis: '#333'
+        down: '#d87a80',        // Coral do tema macarons para alta
+        up: '#2ec7c9',      // Turquesa do tema macarons para baixa
+        volNeutral: 'rgba(182, 162, 222, 0.4)', // Roxo pastel do tema macarons
+        axis: '#008acd'
     };
 
     const option = {
@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', function() {
             {
                 scale: true,
                 offset: 10,
-                axisLabel: { 
+                axisLabel: {
                     formatter: val => val.toFixed(2),
                     margin: 12
                 },
@@ -99,6 +99,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 type: 'candlestick',
                 data: values,
                 itemStyle: {
+                    color: colors.up,
+                    color0: colors.down,
+                    borderColor: colors.up,
+                    borderColor0: colors.down,
                     opacity: 0.85
                 },
                 emphasis: {
@@ -121,7 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // REFORMA DE COR NO VOLUME: Realce ao passar o mouse
                 emphasis: {
                     itemStyle: {
-                        color: function(params) {
+                        color: function (params) {
                             const signal = volumes[params.dataIndex][2];
                             return signal === 1 ? colors.up : colors.down;
                         },
