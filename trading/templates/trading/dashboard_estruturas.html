@@ -94,7 +94,7 @@
                             class="text-end {% if est.pl_realizado > 0 %}text-success fw-bold{% elif est.pl_realizado < 0 %}text-danger{% endif %}">
                             R$ {{ est.pl_realizado|floatformat:2|intcomma }}
                         </td>
-                        <td class="text-end fw-bold">
+                        <td class="text-end fw-bold {% if est.valor_total > 0 %}text-success{% elif est.valor_total < 0 %}text-danger{% endif %}">
                             R$ {{ est.valor_total|floatformat:2|intcomma }}
                         </td>
                         <td class="text-center">

@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Sum
+from django.utils import timezone
 from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot
 from .forms import EstruturaForm
 import json
@@ -105,13 +106,47 @@ def dashboard_estruturas(request):
     total_pl_aberto = estruturas.aggregate(Sum('pl_aberto'))['pl_aberto__sum'] or 0
     valor_total_carteira = estruturas.aggregate(Sum('valor_total'))['valor_total__sum'] or 0
     
-    # Prepara dados para o gráfico ECharts (evolução do patrimônio)
-    snapshots = DailySnapshot.objects.filter(estrutura__usuario=request.user) \
-                                     .values('data') \
-                                     .annotate(total_diario=Sum('valor_total')) \
-                                     .order_by('data')
-    datas_chart = [obj['data'].strftime('%d/%m/%Y') for obj in snapshots]
-    valores_chart = [float(obj['total_diario']) for obj in snapshots]
+    # Prepara dados para o gráfico ECharts (evolução do patrimônio) com lógica de fill-forward
+    # Isso garante que o gráfico não caia se uma estrutura não tiver dado para um dia específico
+    from collections import defaultdict
+    
+    # Busca todos os snapshots relevantes
+    todos_snapshots = DailySnapshot.objects.filter(estrutura__usuario=request.user).order_by('data', 'estrutura_id')
+    
+    if not todos_snapshots.exists():
+        datas_chart = []
+        valores_chart = []
+    else:
+        # Pega todas as datas únicas
+        datas_distintas = sorted(list(set(s.data for s in todos_snapshots)))
+        ids_estruturas = list(estruturas.values_list('id', flat=True))
+        
+        # Mapeia snapshots por data e estrutura
+        mapa_snapshots = defaultdict(dict)
+        for s in todos_snapshots:
+            mapa_snapshots[s.data][s.estrutura_id] = float(s.valor_total)
+            
+        datas_chart = []
+        valores_chart = []
+        
+        # Mantém o último valor conhecido de cada estrutura
+        ultimos_valores = {eid: 0.0 for eid in ids_estruturas}
+        
+        for d in datas_distintas:
+            total_dia = 0.0
+            for eid in ids_estruturas:
+                if eid in mapa_snapshots[d]:
+                    ultimos_valores[eid] = mapa_snapshots[d][eid]
+                total_dia += ultimos_valores[eid]
+            
+            datas_chart.append(d.strftime('%d/%m/%Y'))
+            valores_chart.append(total_dia)
+
+        # Adiciona o ponto de "hoje" se for maior que a última data do snapshot
+        hoje = timezone.now().date()
+        if not datas_chart or datas_distintas[-1] < hoje:
+            datas_chart.append(hoje.strftime('%d/%m/%Y'))
+            valores_chart.append(float(valor_total_carteira))
     
     context = {
         'estruturas_ativas': estruturas_ativas,
