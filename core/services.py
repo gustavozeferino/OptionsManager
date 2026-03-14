@@ -68,6 +68,8 @@ def importar_csv_b3(file_path):
         if df_filtrado.empty:
             return stats
         
+        ativos_objetos_tocados = set()
+        
         # Processa cada linha
         with transaction.atomic():
             for index, row in df_filtrado.iterrows():
@@ -161,12 +163,17 @@ def importar_csv_b3(file_path):
                     else:
                         stats['atualizadas'] += 1
                         
+                    ativos_objetos_tocados.add(ativo_objeto)
+                    
                 except Exception as e:
                     stats['erros'].append({
                         'linha': index + 3,  # +3 porque pulamos 2 linhas e index começa em 0
                         'erro': str(e),
                         'ticker': str(row.get('Instrumento financeiro', 'N/A'))
                     })
+            # Após processar tudo, classificar vencimentos (Mensal/Semanal)
+            for ao in ativos_objetos_tocados:
+                AtivoB3.classificar_vencimentos(ativo_objeto=ao)
     
     except Exception as e:
         stats['erros'].append({

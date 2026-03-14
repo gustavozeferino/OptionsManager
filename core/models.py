@@ -95,6 +95,9 @@ class AtivoB3(models.Model):
     # Informações institucionais
     nome_instituicao = models.CharField(_('Nome da Instituição'), max_length=200, blank=True)
     
+    # Classificação
+    classificacao_vencimento = models.CharField(_('Classificação do Vencimento'), max_length=10, blank=True, null=True, help_text="Mensal ou Semanal")
+    
     # Timestamps
     criado_em = models.DateTimeField(_('Criado em'), auto_now_add=True)
     atualizado_em = models.DateTimeField(_('Atualizado em'), auto_now=True)
@@ -109,6 +112,61 @@ class AtivoB3(models.Model):
             # Se o resultado for negativo, retornamos 0 (já expirou)
             return max(0, delta)
         return None
+
+    @classmethod
+    def classificar_vencimentos(cls, ativo_objeto=None):
+        """
+        Classifica as opções de um ativo objeto (ou de todos) em Mensal ou Semanal
+        baseado na regra de: 
+        - Único vencimento no mês -> Mensal
+        - Múltiplos vencimentos -> O mais próximo da 3ª sexta-feira é Mensal, os outros são Semanais.
+        """
+        import calendar
+        from datetime import date
+        from django.db.models import Count
+        from django.db.models.functions import ExtractYear, ExtractMonth
+
+        qs = cls.objects.exclude(data_expiracao__isnull=True)
+        if ativo_objeto:
+            qs = qs.filter(ativo_objeto=ativo_objeto)
+            
+        ativos_objetos = qs.values_list('ativo_objeto', flat=True).distinct()
+        
+        for ativo_obj in ativos_objetos:
+            # Agrupar por ano e mês
+            vencimentos_ativo = qs.filter(ativo_objeto=ativo_obj).values_list('data_expiracao', flat=True).distinct()
+            
+            # Construir um dicionário estruturado por (ano, mes) -> [datas]
+            meses_dict = {}
+            for d in vencimentos_ativo:
+                key = (d.year, d.month)
+                if key not in meses_dict:
+                    meses_dict[key] = []
+                meses_dict[key].append(d)
+                
+            for (year, month), dates in meses_dict.items():
+                if len(dates) == 1:
+                    # Apenas um vencimento no mês, é o Mensal
+                    cls.objects.filter(ativo_objeto=ativo_obj, data_expiracao=dates[0]).update(classificacao_vencimento='Mensal')
+                else:
+                    # Mais de um, encontrar o mais próximo da terceira sexta
+                    
+                    # Encontrar todas as sextas do mês
+                    c = calendar.Calendar(firstweekday=calendar.SUNDAY)
+                    monthcal = c.monthdatescalendar(year, month)
+                    fridays = [d for week in monthcal for d in week if d.weekday() == calendar.FRIDAY and d.month == month]
+                    
+                    if len(fridays) >= 3:
+                        third_friday = fridays[2]
+                        # Achar a data em 'dates' mais próxima da third_friday
+                        closest_date = min(dates, key=lambda x: abs((x - third_friday).days))
+                        
+                        # Atualizar a mais próxima como Mensal e as outras como Semanal
+                        cls.objects.filter(ativo_objeto=ativo_obj, data_expiracao=closest_date).update(classificacao_vencimento='Mensal')
+                        
+                        outras_datas = [d for d in dates if d != closest_date]
+                        cls.objects.filter(ativo_objeto=ativo_obj, data_expiracao__in=outras_datas).update(classificacao_vencimento='Semanal')
+
 
     class Meta:
         verbose_name = _('Ativo B3')

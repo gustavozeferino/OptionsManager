@@ -199,48 +199,146 @@ def upload_csv(request):
 
 @user_passes_test(apenas_admin)
 def lista_ativos(request):
-
-    """Exibe a lista de ativos com filtros, busca e paginação."""
+    """Exibe a lista de ativos com filtros, formatação de meses/semanas e Option Chain."""
     search_query = request.GET.get('search', '')
     ativo_filtro = request.GET.get('ativo_objeto', '')
+    mes_filtro = request.GET.get('mes', '')
     vencimento_filtro = request.GET.get('vencimento', '')
-    ordenar_por = request.GET.get('order', 'ticker')
 
-    # Pega os tickers permitidos
-    permitidos = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True)
+    permitidos = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True).order_by('ticker')
+    lista_ativos_objeto = list(permitidos)
+    
+    # Se não houver ativos ativos no painel
+    if not lista_ativos_objeto:
+        return render(request, 'core/lista_ativos.html', {'lista_ativos_objeto': []})
 
-    # Filtra os ativos que pertencem a essa lista
-    ativos_list = AtivoB3.objects.filter(ativo_objeto__in=permitidos)
+    # Default para o primeiro ativo se não especificado
+    if not ativo_filtro or ativo_filtro not in lista_ativos_objeto:
+        ativo_filtro = lista_ativos_objeto[0]
 
-    # Filtros
+    # Busca todas as opções do ativo selecionado
+    ativos_base = AtivoB3.objects.filter(ativo_objeto=ativo_filtro).exclude(data_expiracao__isnull=True)
+    
+    # Busca global (sobrescreve o option chain)
     if search_query:
-        ativos_list = ativos_list.filter(
+        ativos_list = AtivoB3.objects.filter(
             Q(ticker__icontains=search_query) | Q(codigo_isin__icontains=search_query)
-        )
-    if ativo_filtro:
-        ativos_list = ativos_list.filter(ativo_objeto=ativo_filtro)
-    if vencimento_filtro:
-        ativos_list = ativos_list.filter(data_expiracao=vencimento_filtro)
+        ).order_by('ticker')
+        paginator = Paginator(ativos_list, 50)
+        page_number = request.GET.get('page')
+        ativos = paginator.get_page(page_number)
+        return render(request, 'core/lista_ativos.html', {
+            'ativos': ativos,
+            'search_query': search_query,
+            'ativo_filtro': ativo_filtro,
+            'lista_ativos_objeto': lista_ativos_objeto,
+            'is_search': True
+        })
 
-    ativos_list = ativos_list.order_by(ordenar_por)
+    # Agrupar datas por ano e mês para a navegação (grade de 12 meses por ano)
+    datas_distintas = ativos_base.values_list('data_expiracao', flat=True).order_by('data_expiracao').distinct()
+    
+    meses_labels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+    anos_dict = {}
+    
+    for d in datas_distintas:
+        y = d.year
+        m = d.month
+        
+        if y not in anos_dict:
+            # Inicializa o ano com 12 slots para os meses
+            anos_dict[y] = [
+                {'mes_num': i, 'codigo': f"{y}-{i:02d}", 'label': meses_labels[i-1], 'datas': [], 'valido': False}
+                for i in range(1, 13)
+            ]
+            
+        slot = anos_dict[y][m-1]
+        slot['datas'].append(d)
+        slot['valido'] = True
+        
+    # Extrair apenas os meses válidos para a lógica de "mês ativo corrente"
+    lista_meses_validos = []
+    for slots in anos_dict.values():
+        for slot in slots:
+            if slot['valido']:
+                lista_meses_validos.append(slot)
+    
+    if not lista_meses_validos:
+        # Nenhum vencimento encontrado para o ativo
+        return render(request, 'core/lista_ativos.html', {
+            'ativo_filtro': ativo_filtro,
+            'lista_ativos_objeto': lista_ativos_objeto,
+        })
 
-    # Paginação (50 por página)
-    paginator = Paginator(ativos_list, 50)
-    page_number = request.GET.get('page')
-    ativos = paginator.get_page(page_number)
+    # Decidir o mês ativo
+    if not mes_filtro or not any(m['codigo'] == mes_filtro for m in lista_meses_validos):
+        # Acha o mês mais próximo de expirar que ainda não expirou (ou o primeiro do dict)
+        hoje = timezone.now().date()
+        meses_futuros = [m for m in lista_meses_validos if any(d >= hoje for d in m['datas'])]
+        if meses_futuros:
+            mes_ativo_dict = meses_futuros[0]
+        else:
+            mes_ativo_dict = lista_meses_validos[-1] # Pega o último se todos já passaram
+        mes_filtro = mes_ativo_dict['codigo']
+    else:
+        mes_ativo_dict = next(m for m in lista_meses_validos if m['codigo'] == mes_filtro)
+        
+    datas_do_mes = mes_ativo_dict['datas']
 
-    # Listas para os Selects no template
-    lista_ativos_objeto = AtivoB3.objects.values_list('ativo_objeto', flat=True).distinct().order_by('ativo_objeto')
-    lista_vencimentos = AtivoB3.objects.exclude(data_expiracao__isnull=True).values_list('data_expiracao', flat=True).distinct().order_by('data_expiracao')
+    # Decidir a semana (vencimento específico)
+    if not vencimento_filtro:
+        # Tenta achar o Mensal dentro do mês selecionado
+        vencimento_mensal = ativos_base.filter(data_expiracao__in=datas_do_mes, classificacao_vencimento='Mensal').values_list('data_expiracao', flat=True).first()
+        if vencimento_mensal:
+            vencimento_filtro = vencimento_mensal.strftime('%Y-%m-%d')
+        else:
+            vencimento_filtro = datas_do_mes[0].strftime('%Y-%m-%d')
+    else:
+        # Validação básica pra não travar se passar lixo na URL
+        try:
+            datetime.datetime.strptime(vencimento_filtro, '%Y-%m-%d')
+        except ValueError:
+             vencimento_filtro = datas_do_mes[0].strftime('%Y-%m-%d')
+
+    # Filtrar opções pelas datas
+    opcoes = ativos_base.filter(data_expiracao=vencimento_filtro).order_by('preco_exercicio')
+
+    # Obter histórico de preços mais recente para alimentar a grade
+    from core.models import HistoricoPreco
+    historicos = HistoricoPreco.objects.filter(ativo__in=opcoes).order_by('-data_pregao')
+    precos_recentes = {}
+    for h in historicos:
+        if h.ativo_id not in precos_recentes:
+            precos_recentes[h.ativo_id] = h
+
+    # Option Chain Builder
+    option_chain_dict = {}
+    for op in opcoes:
+        strike = op.preco_exercicio
+        if strike not in option_chain_dict:
+            option_chain_dict[strike] = {'strike': strike, 'call': None, 'put': None, 'call_hist': None, 'put_hist': None}
+            
+        hist = precos_recentes.get(op.codigo_isin)
+        
+        if op.tipo_opcao.strip().upper() == 'CALL':
+            option_chain_dict[strike]['call'] = op
+            option_chain_dict[strike]['call_hist'] = hist
+        else:
+            option_chain_dict[strike]['put'] = op
+            option_chain_dict[strike]['put_hist'] = hist
+            
+    chain_list = list(option_chain_dict.values())
+    chain_list.sort(key=lambda x: x['strike'] if x['strike'] else 0)
 
     context = {
-        'ativos': ativos,
-        'search_query': search_query,
         'ativo_filtro': ativo_filtro,
+        'mes_filtro': mes_filtro,
         'vencimento_filtro': vencimento_filtro,
         'lista_ativos_objeto': lista_ativos_objeto,
-        'lista_vencimentos': lista_vencimentos,
-        'order_atual': ordenar_por,
+        'anos_dict': anos_dict,
+        'datas_do_mes': datas_do_mes,
+        'chain_list': chain_list,
+        'is_search': False
     }
     return render(request, 'core/lista_ativos.html', context)
 

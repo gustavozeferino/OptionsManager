@@ -25,148 +25,194 @@
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <form method="get" action="{% url 'core:lista_ativos' %}">
-            
-            <div class="row mb-3">
-                <div class="col-12">
+            <div class="row align-items-center">
+                <div class="col-md-6 mb-3 mb-md-0">
+                    <label class="small text-muted fw-bold mb-1">Buscar (Ticker ou ISIN):</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light"><i class="fas fa-search"></i></span>
-                        <input 
-                            type="text" 
-                            class="form-control form-control-lg" 
-                            name="search" 
-                            value="{{ search_query }}" 
-                            placeholder="Pesquise por Ticker, ISIN ou descrição..."
-                        >
-                        <button type="submit" class="btn btn-primary px-4">Buscar</button>
+                        <input type="text" class="form-control" name="search" value="{{ search_query }}" placeholder="Pesquisar em toda a base...">
+                        <button type="submit" class="btn btn-primary">Buscar</button>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="small text-muted fw-bold mb-1">Selecionar Ativo Objeto:</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light"><i class="fas fa-filter"></i></span>
+                        <select name="ativo_objeto" class="form-select" onchange="this.form.submit()">
+                            <option value="">-- Selecione --</option>
+                            {% for obj in lista_ativos_objeto %}
+                                <option value="{{ obj }}" {% if ativo_filtro == obj %}selected{% endif %}>{{ obj }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                 </div>
             </div>
-
-            <div class="row g-2 align-items-center">
-                <div class="col-md-4">
-                    <label class="small text-muted fw-bold">Ativo Objeto:</label>
-                    <select name="ativo_objeto" class="form-select">
-                        <option value="">Todos</option>
-                        {% for obj in lista_ativos_objeto %}
-                            <option value="{{ obj }}" {% if ativo_filtro == obj %}selected{% endif %}>{{ obj }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="small text-muted fw-bold">Vencimento:</label>
-                    <select name="vencimento" class="form-select">
-                        <option value="">Todos</option>
-                        {% for data in lista_vencimentos %}
-                            <option value="{{ data|date:'Y-m-d' }}" {% if vencimento_filtro == data|date:'Y-m-d' %}selected{% endif %}>
-                                {{ data|date:"d/m/Y" }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-4 d-flex align-items-end gap-2">
-                    <button type="submit" class="btn btn-outline-primary w-100">
-                        <i class="fas fa-filter me-1"></i>Filtrar
-                    </button>
-                    {% if search_query or ativo_filtro or vencimento_filtro %}
-                        <a href="{% url 'core:lista_ativos' %}" class="btn btn-outline-secondary w-100">Limpar</a>
-                    {% endif %}
-                </div>
-            </div>
-
-            <input type="hidden" name="order" value="{{ order_atual }}">
+            
+            <!-- Persist search state -->
+            {% if mes_filtro %}<input type="hidden" name="mes" value="{{ mes_filtro }}">{% endif %}
+            {% if vencimento_filtro %}<input type="hidden" name="vencimento" value="{{ vencimento_filtro }}">{% endif %}
         </form>
     </div>
 </div>
 
-<div class="card shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-dark">
-                    <tr>
-                        <th>
-                            <a href="?search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order=ativo_objeto" class="text-white text-decoration-none">
-                                Ativo Objeto <i class="fas fa-sort"></i>
-                            </a>
-                        </th>
-                        <th>
-                            <a href="?search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order=ticker" class="text-white text-decoration-none">
-                                Ticker <i class="fas fa-sort"></i>
-                            </a>
-                        </th>
-                        <th>Tipo</th>
-                        <th>
-                            <a href="?search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order=preco_exercicio" class="text-white text-decoration-none">
-                                Strike <i class="fas fa-sort"></i>
-                            </a>
-                        </th>
-                        <th>
-                            <a href="?search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order=data_expiracao" class="text-white text-decoration-none">
-                                Vencimento <i class="fas fa-sort"></i>
-                            </a>
-                        </th>
-                        <th>DTE / Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for ativo in ativos %}
-                    <tr>
-                        <td><span class="badge bg-info text-dark">{{ ativo.ativo_objeto }}</span></td>
-                        <td><strong><a href="{% url 'core:detalhe_ativo' ativo.ticker %}">{{ ativo.ticker }}</a></strong></td>
-                        <td>{{ ativo.tipo_opcao|default:"-" }}</td>
-                        <td>{% if ativo.preco_exercicio %}R$ {{ ativo.preco_exercicio|floatformat:2 }}{% else %}-{% endif %}</td>
-                        <td>{{ ativo.data_expiracao|date:"d/m/Y"|default:"-" }}</td>
-                        <td class="text-nowrap">
-                            {% if ativo.dte is not None %}
-                                {% if ativo.dte > 1 %}
-                                    <span class="badge bg-success text-white me-2">{{ ativo.dte }} dias</span>
-                                {% elif ativo.dte == 1 %}
-                                    <span class="badge bg-warning text-dark me-2">Vence Hoje</span>
-                                {% else %}
-                                    <span class="badge bg-danger text-white me-2">Expirada</span>
-                                   <!-- <span class="fw-bold small text-danger">Ref: R$ {{ ativo.preco_exercicio|floatformat:2 }}</span> -->
-                                {% endif %}
-                            {% else %}
-                                <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="6" class="text-center py-4">Nenhum ativo encontrado para os critérios selecionados.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+{% if is_search %}
+    <!-- Resultado de Busca Global -->
+    <div class="alert alert-info py-2">
+        Mostrando resultados globais para a busca: <strong>{{ search_query }}</strong>. Limpe a busca para ver a Grade de Opções.
+        <a href="{% url 'core:lista_ativos' %}" class="btn btn-sm btn-outline-dark ms-3">Limpar Busca</a>
+    </div>
+    
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Ativo Objeto</th>
+                            <th>Ticker</th>
+                            <th>Tipo</th>
+                            <th>Strike</th>
+                            <th>Vencimento</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ativo in ativos %}
+                        <tr>
+                            <td><span class="badge bg-info text-dark">{{ ativo.ativo_objeto }}</span></td>
+                            <td><strong><a href="{% url 'core:detalhe_ativo' ativo.ticker %}">{{ ativo.ticker }}</a></strong></td>
+                            <td>{{ ativo.tipo_opcao|default:"-" }}</td>
+                            <td>{% if ativo.preco_exercicio %}R$ {{ ativo.preco_exercicio|floatformat:2 }}{% else %}-{% endif %}</td>
+                            <td>{{ ativo.data_expiracao|date:"d/m/Y"|default:"-" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-center py-4">Nenhum ativo encontrado para a busca.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
-
-    {% if ativos.has_other_pages %}
-    <div class="card-footer bg-white py-3">
-        <nav>
-            <ul class="pagination justify-content-center mb-0">
-                {% if ativos.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page=1&search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order={{ order_atual }}">&laquo; Primeira</a>
-                    </li>
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ ativos.previous_page_number }}&search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order={{ order_atual }}">Anterior</a>
-                    </li>
-                {% endif %}
-
-                <li class="page-item disabled">
-                    <span class="page-link text-dark">Página {{ ativos.number }} de {{ ativos.paginator.num_pages }}</span>
+{% else %}
+    <!-- GRADE DE OPÇÕES (Option Chain) -->
+    
+    {% if not anos_dict %}
+        <div class="alert alert-warning">
+            Nenhum vencimento encontrado para o ativo {{ ativo_filtro }}.
+        </div>
+    {% else %}
+        <!-- Navegação de Meses -->
+        <h5 class="fw-bold mb-3"><i class="fas fa-calendar-alt me-2 text-primary"></i>Vencimentos de {{ ativo_filtro }}</h5>
+        
+        <div class="mb-4">
+        {% for ano, meses in anos_dict.items %}
+            <div class="d-flex align-items-center mb-2">
+                <div class="fw-bold me-3 text-secondary" style="width: 50px;">{{ ano }}</div>
+                <div class="d-flex w-100 gap-1">
+                    {% for mes in meses %}
+                        {% if mes.valido %}
+                            <a href="?ativo_objeto={{ ativo_filtro }}&mes={{ mes.codigo }}" 
+                               class="btn btn-sm flex-fill {% if mes.codigo == mes_filtro %}btn-primary fw-bold text-white{% else %}btn-outline-secondary{% endif %}"
+                               title="Vencimentos em {{ mes.label }} {{ ano }}">
+                                {{ mes.label }}
+                            </a>
+                        {% else %}
+                            <div class="btn btn-sm flex-fill btn-light text-muted border border-light" style="opacity: 0.4; pointer-events: none; cursor: default;">
+                                {{ mes.label }}
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+        
+        <!-- Navegação de Semanas/Datas específicas -->
+        <h6 class="fw-bold text-secondary mb-2">Vencimentos Semanais</h6>
+        <ul class="nav nav-pills mb-4 gap-2">
+            {% for data in datas_do_mes %}
+                <li class="nav-item">
+                    <a class="nav-link btn btn-sm {% if data|date:'Y-m-d' == vencimento_filtro %}btn-dark text-white active{% else %}btn-outline-dark{% endif %}" 
+                       href="?ativo_objeto={{ ativo_filtro }}&mes={{ mes_filtro }}&vencimento={{ data|date:'Y-m-d' }}">
+                        {{ data|date:"d/m/Y" }}
+                    </a>
                 </li>
-
-                {% if ativos.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ ativos.next_page_number }}&search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order={{ order_atual }}">Próxima</a>
-                    </li>
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ ativos.paginator.num_pages }}&search={{ search_query }}&ativo_objeto={{ ativo_filtro }}&vencimento={{ vencimento_filtro }}&order={{ order_atual }}">Última &raquo;</a>
-                    </li>
-                {% endif %}
-            </ul>
-        </nav>
-    </div>
+            {% endfor %}
+        </ul>
+        
+        <!-- Tabela Grade de Opções -->
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle text-center mb-0">
+                        <thead>
+                            <!-- Cabeçalho Principal -->
+                            <tr>
+                                <th colspan="4" class="bg-success text-white py-2" style="width: 45%;">CALLS (Opções de Compra)</th>
+                                <th class="bg-dark text-white py-2" style="width: 10%;">STRIKE</th>
+                                <th colspan="4" class="bg-danger text-white py-2" style="width: 45%;">PUTS (Opções de Venda)</th>
+                            </tr>
+                            <!-- Sub Cabeçalho -->
+                            <tr class="table-light text-muted small">
+                                <th>Código</th>
+                                <th>Vol</th>
+                                <th>Data Últ.</th>
+                                <th>Último</th>
+                                
+                                <th>Preço Ref.</th>
+                                
+                                <th>Último</th>
+                                <th>Data Últ.</th>
+                                <th>Vol</th>
+                                <th>Código</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for option in chain_list %}
+                            <tr>
+                                <!-- Lado CALLs -->
+                                {% if option.call %}
+                                    <td class="fw-bold"><a href="{% url 'core:detalhe_ativo' option.call.ticker %}" class="text-success text-decoration-none">{{ option.call.ticker }}</a></td>
+                                    <td class="text-muted small">{% if option.call_hist %}{{ option.call_hist.quantidade_negocios }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.call_hist %}{{ option.call_hist.data_pregao|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                    <td class="fw-bold">{% if option.call_hist and option.call_hist.fechamento > 0 %}R$ {{ option.call_hist.fechamento|floatformat:2 }}{% else %}-{% endif %}</td>
+                                {% else %}
+                                    <td>-</td><td>-</td><td>-</td><td>-</td>
+                                {% endif %}
+                                
+                                <!-- Centro STRIKE -->
+                                <td class="bg-light fw-bold fs-6">
+                                    {% if option.strike %}
+                                        R$ {{ option.strike|floatformat:2 }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                
+                                <!-- Lado PUTs -->
+                                {% if option.put %}
+                                    <td class="fw-bold">{% if option.put_hist and option.put_hist.fechamento > 0 %}R$ {{ option.put_hist.fechamento|floatformat:2 }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.put_hist %}{{ option.put_hist.data_pregao|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.put_hist %}{{ option.put_hist.quantidade_negocios }}{% else %}-{% endif %}</td>
+                                    <td class="fw-bold"><a href="{% url 'core:detalhe_ativo' option.put.ticker %}" class="text-danger text-decoration-none">{{ option.put.ticker }}</a></td>
+                                {% else %}
+                                    <td>-</td><td>-</td><td>-</td><td>-</td>
+                                {% endif %}
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="9" class="py-4 text-muted">Ainda não há dados disponíveis para este vencimento.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer bg-light text-muted small text-center py-2">
+                Nota: Preços e volume baseados no último fechamento importado.
+            </div>
+        </div>
     {% endif %}
-</div>
+    
+{% endif %}
+
 {% endblock %}
