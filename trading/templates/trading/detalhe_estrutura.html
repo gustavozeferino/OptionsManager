@@ -41,62 +41,63 @@
 </div>
 
 <!-- Header Stats -->
-<div class="row mb-4">
-    <div class="col-md-2">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">PL Realizado</h6>
-                <h5
-                    class="mb-0 {% if estrutura.pl_realizado > 0 %}text-success{% elif estrutura.pl_realizado < 0 %}text-danger{% endif %}">
-                    R$ {{ estrutura.pl_realizado|floatformat:2|intcomma }}
-                </h5>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">PL Aberto</h6>
-                <h5
-                    class="mb-0 {% if estrutura.pl_aberto > 0 %}text-success{% elif estrutura.pl_aberto < 0 %}text-danger{% endif %}">
+<div class="row mb-4 g-2">
+    <div class="col-md-4 col-lg-2">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body px-2 py-3 text-center">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Aberto</h6>
+                <h5 class="mb-0 {% if estrutura.pl_aberto > 0 %}text-success{% elif estrutura.pl_aberto < 0 %}text-danger{% endif %}" style="font-size: 1.1rem;">
                     R$ {{ estrutura.pl_aberto|floatformat:2|intcomma }}
                 </h5>
             </div>
         </div>
     </div>
-    <div class="col-md-2">
-        <div class="card shadow-sm border-0 bg-light">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">PL Total</h6>
-                <h5 class="mb-0">
+    <div class="col-md-4 col-lg-2">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body px-2 py-3 text-center">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Realizado</h6>
+                <h5 class="mb-0 {% if estrutura.pl_realizado > 0 %}text-success{% elif estrutura.pl_realizado < 0 %}text-danger{% endif %}" style="font-size: 1.1rem;">
+                    R$ {{ estrutura.pl_realizado|floatformat:2|intcomma }}
+                </h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card shadow-sm border-0 h-100 bg-light">
+            <div class="card-body px-2 py-3 text-center">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Total</h6>
+                <h5 class="mb-0" style="font-size: 1.1rem;">
                     R$ {{ estrutura.valor_total|floatformat:2|intcomma }}
                 </h5>
             </div>
         </div>
     </div>
-    <div class="col-md-2">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">Início</h6>
-                <h5 class="mb-0">{% if estrutura.data_inicial %}{{ estrutura.data_inicial|date:"d/m/y" }}
-                    {% else %}-{% endif %}</h5>
+    <div class="col-md-4 col-lg-2">
+        <div class="card shadow-sm border-0 h-100 border-start border-info border-4">
+            <div class="card-body px-2 py-3 text-center">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">Exposição</h6>
+                <h5 class="mb-0 {% if estrutura.exposicao_atual > 0 %}text-success{% elif estrutura.exposicao_atual < 0 %}text-danger{% else %}text-info{% endif %}" style="font-size: 1.1rem;">
+                    R$ {{ estrutura.exposicao_atual|floatformat:2|intcomma }}
+                </h5>
             </div>
         </div>
     </div>
-    <div class="col-md-2">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">Última Op.</h6>
-                <h5 class="mb-0">{% if estrutura.data_final %}{{ estrutura.data_final|date:"d/m/y" }}
-                    {% else %}-{% endif %}</h5>
+    <div class="col-md-4 col-lg-2">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body px-2 py-3 text-center">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">Início / Fim</h6>
+                <h5 class="mb-0" style="font-size: 0.9rem;">
+                    {% if estrutura.data_inicial %}{{ estrutura.data_inicial|date:"d/m/y" }}{% else %}-{% endif %} /
+                    {% if estrutura.data_final %}{{ estrutura.data_final|date:"d/m/y" }}{% else %}-{% endif %}
+                </h5>
             </div>
         </div>
     </div>
-    <div class="col-md-2">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.7rem;">Dias</h6>
-                <h5 class="mb-0">{{ estrutura.dias_estrutura }} dias</h5>
+    <div class="col-md-4 col-lg-2">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body px-2 py-3 text-center">
+                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">Duração</h6>
+                <h5 class="mb-0" style="font-size: 1.1rem;">{{ estrutura.dias_estrutura }} dias</h5>
             </div>
         </div>
     </div>

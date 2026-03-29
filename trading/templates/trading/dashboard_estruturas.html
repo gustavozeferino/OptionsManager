@@ -21,27 +21,35 @@
 
 <!-- Resumo da Carteira -->
 <div class="row mb-4">
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card bg-primary text-white shadow-sm border-0">
             <div class="card-body text-center">
-                <h6 class="text-uppercase opacity-75">PL Aberto Total</h6>
-                <h3 class="mb-0">R$ {{ total_pl_aberto|floatformat:2|intcomma }}</h3>
+                <h6 class="text-uppercase opacity-75 small">PL Aberto Total</h6>
+                <h4 class="mb-0">R$ {{ total_pl_aberto|floatformat:2|intcomma }}</h4>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card bg-success text-white shadow-sm border-0">
             <div class="card-body text-center">
-                <h6 class="text-uppercase opacity-75">PL Realizado Total</h6>
-                <h3 class="mb-0">R$ {{ total_pl_realizado|floatformat:2|intcomma }}</h3>
+                <h6 class="text-uppercase opacity-75 small">PL Realizado Total</h6>
+                <h4 class="mb-0">R$ {{ total_pl_realizado|floatformat:2|intcomma }}</h4>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
+        <div class="card bg-info text-white shadow-sm border-0">
+            <div class="card-body text-center">
+                <h6 class="text-uppercase opacity-75 small">Exposição Geral</h6>
+                <h4 class="mb-0">R$ {{ total_exposicao|floatformat:2|intcomma }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
         <div class="card bg-dark text-white shadow-sm border-0">
             <div class="card-body text-center">
-                <h6 class="text-uppercase opacity-75">Valor Total Carteira</h6>
-                <h3 class="mb-0">R$ {{ valor_total_carteira|floatformat:2|intcomma }}</h3>
+                <h6 class="text-uppercase opacity-75 small">Valor Total Carteira</h6>
+                <h4 class="mb-0">R$ {{ valor_total_carteira|floatformat:2|intcomma }}</h4>
             </div>
         </div>
     </div>
@@ -67,6 +75,7 @@
                         <th class="text-center">Início</th>
                         <th class="text-center">Última Op.</th>
                         <th class="text-center">Dias</th>
+                        <th class="text-end">Exposição</th>
                         <th class="text-end">PL Aberto</th>
                         <th class="text-end">PL Realizado</th>
                         <th class="text-end">Valor Total</th>
@@ -86,6 +95,9 @@
                             {% if est.data_final %}{{ est.data_final|date:"d/m/y" }}{% else %}-{% endif %}
                         </td>
                         <td class="text-center" style="font-size: 0.85rem;">{{ est.dias_estrutura }} d</td>
+                        <td class="text-end fw-bold {% if est.exposicao_atual > 0 %}text-success{% elif est.exposicao_atual < 0 %}text-danger{% else %}text-muted{% endif %}" style="font-size: 0.9rem;">
+                            R$ {{ est.exposicao_atual|floatformat:2|intcomma }}
+                        </td>
                         <td
                             class="text-end {% if est.pl_aberto > 0 %}text-success fw-bold{% elif est.pl_aberto < 0 %}text-danger fw-bold{% endif %}">
                             R$ {{ est.pl_aberto|floatformat:2|intcomma }}
@@ -104,7 +116,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">Nenhuma estrutura ativa.</td>
+                        <td colspan="9" class="text-center py-4 text-muted">Nenhuma estrutura ativa.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

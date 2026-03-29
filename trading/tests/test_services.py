@@ -104,3 +104,41 @@ class TradingServicesTestCase(TestCase):
         self.assertEqual(self.estrutura.pl_realizado, Decimal('0.00'))
         self.assertEqual(self.estrutura.pl_aberto, Decimal('500.00'))
         self.assertEqual(self.estrutura.valor_total, Decimal('500.00'))
+
+    def test_exposicao_financeira(self):
+        """Testa o cálculo da exposição financeira total da estrutura"""
+        from trading.models import DailySnapshot
+        
+        # 1. Compra 100 a $10. Último Preço = $15 (definido no setUp).
+        # Exposição = abs(100) * 15 = 1500
+        Ordem.objects.create(
+            estrutura=self.estrutura, ativo=self.ativo,
+            quantidade=100, preco=Decimal('10.00'), data=date.today()
+        )
+        
+        # recarregar do banco para pegar os valores atualizados pelo signal -> recalcular_estrutura
+        self.estrutura.refresh_from_db()
+        self.assertEqual(self.estrutura.exposicao_atual, Decimal('1500.00'))
+        
+        # 2. Vende 50 a $12. Qtd Restante = 50. 
+        # Exposição = abs(50) * 15 = 750
+        Ordem.objects.create(
+            estrutura=self.estrutura, ativo=self.ativo,
+            quantidade=-50, preco=Decimal('12.00'), data=date.today()
+        )
+        self.estrutura.refresh_from_db()
+        self.assertEqual(self.estrutura.exposicao_atual, Decimal('750.00'))
+        
+        # 3. Vende mais 100 a $13. Qtd Restante = -50 (Vendida).
+        # Exposição = -50 * 15 = -750
+        Ordem.objects.create(
+            estrutura=self.estrutura, ativo=self.ativo,
+            quantidade=-100, preco=Decimal('13.00'), data=date.today()
+        )
+        self.estrutura.refresh_from_db()
+        self.assertEqual(self.estrutura.exposicao_atual, Decimal('-750.00'))
+        
+        # Verifica se o snapshot diário também tem a exposição
+        snapshot = DailySnapshot.objects.filter(estrutura=self.estrutura, data=date.today()).first()
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(snapshot.exposicao_diaria, Decimal('-750.00'))

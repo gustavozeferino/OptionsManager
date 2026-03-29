@@ -87,7 +87,8 @@ def recalcular_estrutura(estrutura, data_base=None):
         estrutura.pl_realizado = 0
         estrutura.pl_aberto = 0
         estrutura.valor_total = 0
-        estrutura.save(update_fields=['pl_realizado', 'pl_aberto', 'valor_total'])
+        estrutura.exposicao_atual = 0
+        estrutura.save(update_fields=['pl_realizado', 'pl_aberto', 'valor_total', 'exposicao_atual'])
         return
         
     min_date = min(o.data for o in ordens)
@@ -183,6 +184,7 @@ def recalcular_estrutura(estrutura, data_base=None):
         # 3. Calcula Snapshot do dia
         pl_realizado_total = sum(st['pl_realizado'] for st in estado.values())
         pl_aberto_total = Decimal('0.0')
+        exposicao_total = Decimal('0.0')
         
         for a in ativos_envolvidos:
             st = estado[a.codigo_isin]
@@ -191,6 +193,8 @@ def recalcular_estrutura(estrutura, data_base=None):
                 preco_atual = ultimo_preco_conhecido[a.codigo_isin]
                 if preco_atual == 0:
                     preco_atual = st['preco_medio']
+                
+                exposicao_total += qtd * preco_atual
                 
                 if qtd > 0:
                     pl_aberto_total += (preco_atual - st['preco_medio']) * qtd
@@ -208,7 +212,8 @@ def recalcular_estrutura(estrutura, data_base=None):
                     data=current_date,
                     pl_realizado=pl_realizado_total,
                     pl_aberto=pl_aberto_total,
-                    valor_total=valor_total
+                    valor_total=valor_total,
+                    exposicao_diaria=exposicao_total
                 )
             )
         
@@ -224,6 +229,7 @@ def recalcular_estrutura(estrutura, data_base=None):
         estrutura.pl_realizado = last.pl_realizado
         estrutura.pl_aberto = last.pl_aberto
         estrutura.valor_total = last.valor_total
+        estrutura.exposicao_atual = last.exposicao_diaria
         
         # Datas e estatísticas
         primeira_ordem = ordens[0].data
@@ -238,7 +244,7 @@ def recalcular_estrutura(estrutura, data_base=None):
         # Se todos os snapshots tiverem PL Aberto zero e a quantidade for zero em todos ativos, 
         # a estrutura pode ser considerada fechada se o usuário quiser, mas vamos manter a lógica de datas.
         
-        estrutura.save(update_fields=['pl_realizado', 'pl_aberto', 'valor_total', 'data_inicial', 'data_final', 'dias_estrutura'])
+        estrutura.save(update_fields=['pl_realizado', 'pl_aberto', 'valor_total', 'exposicao_atual', 'data_inicial', 'data_final', 'dias_estrutura'])
 
 
 
@@ -399,7 +405,7 @@ def importar_ordens_profit(user, csv_file):
                 qtd = int(row['Qtd'].replace('.', ''))
                 
                 if row['Lado'].upper() == 'V':
-                    qtd = -abs(qtd)
+                    qtd = -qtd
 
                 dt_obj = datetime.strptime(row['Criação'], '%d/%m/%Y %H:%M:%S')
                 

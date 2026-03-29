@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Relatórios e Performance - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-chart-line me-2 text-primary"></i> Relatórios e Performance</h2>
+    <div>
+        <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Dashboard
+        </a>
+    </div>
+</div>
+
+{% if empty %}
+<div class="alert alert-info shadow-sm">
+    <i class="fas fa-info-circle me-2"></i> Ainda não há dados históricos suficientes para gerar os relatórios. 
+    Comece adicionando ordens às suas estruturas.
+</div>
+{% else %}
+
+<!-- Cards de Resumo Rápido -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase small">Patrimônio Atual</h6>
+                <h2 class="mb-0">R$ {{ total_atual|floatformat:2|intcomma }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase small">Exposição Atual</h6>
+                <h2 class="mb-0 text-info">R$ {{ exposicao_atual|floatformat:2|intcomma }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráficos Principais -->
+<div class="row mb-4">
+    <!-- Evolução Patrimonial -->
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white pt-3 border-bottom-0">
+                <h5 class="card-title"><i class="fas fa-chart-area me-2 text-primary"></i> Evolução Patrimonial (Equity)</h5>
+            </div>
+            <div class="card-body">
+                <div style="position: relative; height: 300px;">
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Resultado Mensal -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white pt-3 border-bottom-0">
+                <h5 class="card-title"><i class="fas fa-calendar-alt me-2 text-success"></i> Resultado Mensal</h5>
+            </div>
+            <div class="card-body">
+                <div style="position: relative; height: 300px;">
+                    <canvas id="monthlyChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Resultado Semanal -->
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white pt-3 border-bottom-0">
+                <h5 class="card-title"><i class="fas fa-calendar-week me-2 text-info"></i> Resultado Semanal</h5>
+            </div>
+            <div class="card-body">
+                <div style="position: relative; height: 300px;">
+                    <canvas id="weeklyChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Exposição Histórica -->
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white pt-3 border-bottom-0">
+                <h5 class="card-title"><i class="fas fa-shield-alt me-2 text-warning"></i> Exposição Histórica</h5>
+            </div>
+            <div class="card-body">
+                <div style="position: relative; height: 300px;">
+                    <canvas id="exposureChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% if not empty %}
+    const equityDatas = JSON.parse('{{ equity_datas|escapejs }}');
+    const equityValores = JSON.parse('{{ equity_valores|escapejs }}');
+    const equityExposicao = JSON.parse('{{ equity_exposicao|escapejs }}');
+    const monthlyLabels = JSON.parse('{{ monthly_labels|escapejs }}');
+    const monthlyValues = JSON.parse('{{ monthly_values|escapejs }}');
+    const weeklyLabels = JSON.parse('{{ weekly_labels|escapejs }}');
+    const weeklyValues = JSON.parse('{{ weekly_values|escapejs }}');
+
+    const ctxEquity = document.getElementById('equityChart').getContext('2d');
+    new Chart(ctxEquity, {
+        type: 'line',
+        data: {
+            labels: equityDatas,
+            datasets: [{
+                label: 'Patrimônio',
+                data: equityValores,
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                fill: true,
+                tension: 0.3,
+                borderWidth: 3,
+                pointRadius: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Valor: ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.raw);
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: { 
+                    ticks: { 
+                        callback: function(value) {
+                            return 'R$ ' + value.toLocaleString('pt-BR');
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    const ctxMonthly = document.getElementById('monthlyChart').getContext('2d');
+    new Chart(ctxMonthly, {
+        type: 'bar',
+        data: {
+            labels: monthlyLabels,
+            datasets: [{
+                label: 'Lucro/Prejuízo',
+                data: monthlyValues,
+                backgroundColor: monthlyValues.map(v => v >= 0 ? 'rgba(25, 135, 84, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                borderColor: monthlyValues.map(v => v >= 0 ? '#198754' : '#dc3545'),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Resultado: ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.raw);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    const ctxWeekly = document.getElementById('weeklyChart').getContext('2d');
+    new Chart(ctxWeekly, {
+        type: 'bar',
+        data: {
+            labels: weeklyLabels,
+            datasets: [{
+                label: 'Resultado Semanal',
+                data: weeklyValues,
+                backgroundColor: 'rgba(13, 202, 240, 0.7)',
+                borderColor: '#0dcaf0',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Resultado: ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.raw);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    const ctxExposure = document.getElementById('exposureChart').getContext('2d');
+    new Chart(ctxExposure, {
+        type: 'line',
+        data: {
+            labels: equityDatas,
+            datasets: [{
+                label: 'Exposição',
+                data: equityExposicao,
+                borderColor: '#ffc107',
+                backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                fill: true,
+                tension: 0.1,
+                borderWidth: 2,
+                pointRadius: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Exposição: ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.raw);
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: { 
+                    ticks: { 
+                        callback: function(value) {
+                            return 'R$ ' + value.toLocaleString('pt-BR');
+                        }
+                    }
+                }
+            }
+        }
+    });
+    {% endif %}
+});
+</script>
+{% endblock %}

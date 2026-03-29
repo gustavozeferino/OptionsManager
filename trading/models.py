@@ -13,6 +13,7 @@ class Estrutura(models.Model):
     pl_realizado = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     pl_aberto = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     valor_total = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    exposicao_atual = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     
     STATUS_CHOICES = [
         ('ABERTA', 'Aberta'),
@@ -88,6 +89,7 @@ class DailySnapshot(models.Model):
     pl_realizado = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     pl_aberto = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     valor_total = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    exposicao_diaria = models.DecimalField(max_digits=15, decimal_places=2, default=0)
 
     class Meta:
         verbose_name = "Snapshot Diário"

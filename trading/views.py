@@ -7,6 +7,8 @@ from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot
 from .forms import EstruturaForm
 import json
 from .services import importar_ordens_profit
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 
 @login_required
@@ -105,6 +107,7 @@ def dashboard_estruturas(request):
     total_pl_realizado = estruturas.aggregate(Sum('pl_realizado'))['pl_realizado__sum'] or 0
     total_pl_aberto = estruturas.aggregate(Sum('pl_aberto'))['pl_aberto__sum'] or 0
     valor_total_carteira = estruturas.aggregate(Sum('valor_total'))['valor_total__sum'] or 0
+    total_exposicao = estruturas_ativas.aggregate(Sum('exposicao_atual'))['exposicao_atual__sum'] or 0
     
     # Prepara dados para o gráfico ECharts (evolução do patrimônio) com lógica de fill-forward
     # Isso garante que o gráfico não caia se uma estrutura não tiver dado para um dia específico
@@ -154,6 +157,7 @@ def dashboard_estruturas(request):
         'total_pl_realizado': total_pl_realizado,
         'total_pl_aberto': total_pl_aberto,
         'valor_total_carteira': valor_total_carteira,
+        'total_exposicao': total_exposicao,
         'datas_chart': json.dumps(datas_chart),
         'valores_chart': json.dumps(valores_chart),
     }
@@ -464,3 +468,102 @@ def importar_ordens_profit(user, csv_file):
             print("Nenhuma ordem válida foi encontrada para importação.")
 
     return len(ordens_para_criar), erros
+
+@login_required
+def relatorio_performance(request):
+    """
+    View para relatórios detalhados de performance.
+    """
+    # 1. Busca todos os snapshots do usuário
+    snapshots = DailySnapshot.objects.filter(
+        estrutura__usuario=request.user
+    ).order_by('data', 'estrutura_id')
+    
+    if not snapshots.exists():
+        return render(request, 'trading/relatorios.html', {'empty': True})
+        
+    # Agrupamento para Equity Curve e Exposição Histórica
+    datas_distintas = sorted(list(set(s.data for s in snapshots)))
+    ids_estruturas = list(Estrutura.objects.filter(usuario=request.user).values_list('id', flat=True))
+    
+    # Mapeia snapshots por data e estrutura
+    mapa_snapshots = defaultdict(dict)
+    for s in snapshots:
+        mapa_snapshots[s.data][s.estrutura_id] = {
+            'valor': float(s.valor_total),
+            'exposicao': float(s.exposicao_diaria)
+        }
+        
+    equity_curve_datas = []
+    equity_curve_valores = []
+    equity_curve_exposicao = []
+    
+    # Mantém o último valor conhecido de cada estrutura para preenchimento (fill-forward)
+    ultimos_valores = {eid: {'valor': 0.0, 'exposicao': 0.0} for eid in ids_estruturas}
+    
+    # Para cálculos de performance mensal/semanal
+    last_total_per_month = {}
+    last_total_per_week = {}
+    
+    for d in datas_distintas:
+        total_dia = 0.0
+        exposicao_dia = 0.0
+        for eid in ids_estruturas:
+            if eid in mapa_snapshots[d]:
+                ultimos_valores[eid]['valor'] = mapa_snapshots[d][eid]['valor']
+                ultimos_valores[eid]['exposicao'] = mapa_snapshots[d][eid]['exposicao']
+            total_dia += ultimos_valores[eid]['valor']
+            exposicao_dia += ultimos_valores[eid]['exposicao']
+        
+        equity_curve_datas.append(d.strftime('%d/%m/%Y'))
+        equity_curve_valores.append(total_dia)
+        equity_curve_exposicao.append(exposicao_dia)
+        
+        # Guarda o total do dia como potencial "último do período"
+        month_key = d.strftime('%Y-%m')
+        year, week, weekday = d.isocalendar()
+        week_key = f"{year}-W{week:02d}"
+        
+        last_total_per_month[month_key] = total_dia
+        last_total_per_week[week_key] = total_dia
+
+    # Calcula resultados mensais (deltas)
+    sorted_months = sorted(last_total_per_month.keys())
+    monthly_labels = []
+    monthly_values = []
+    prev_val = 0.0
+    for i, m in enumerate(sorted_months):
+        curr_val = last_total_per_month[m]
+        result = curr_val - prev_val if i > 0 else curr_val
+        
+        dt_obj = datetime.strptime(m, '%Y-%m')
+        monthly_labels.append(dt_obj.strftime('%b/%y'))
+        monthly_values.append(round(result, 2))
+        prev_val = curr_val
+
+    # Calcula resultados semanais (deltas)
+    sorted_weeks = sorted(last_total_per_week.keys())
+    weekly_labels = []
+    weekly_values = []
+    prev_val_w = 0.0
+    for i, w in enumerate(sorted_weeks):
+        curr_val = last_total_per_week[w]
+        result = curr_val - prev_val_w if i > 0 else curr_val
+        
+        weekly_labels.append(f"Sem {w.split('-W')[-1]}")
+        weekly_values.append(round(result, 2))
+        prev_val_w = curr_val
+
+    context = {
+        'equity_datas': json.dumps(equity_curve_datas),
+        'equity_valores': json.dumps(equity_curve_valores),
+        'equity_exposicao': json.dumps(equity_curve_exposicao),
+        'monthly_labels': json.dumps(monthly_labels),
+        'monthly_values': json.dumps(monthly_values),
+        'weekly_labels': json.dumps(weekly_labels),
+        'weekly_values': json.dumps(weekly_values),
+        'total_atual': equity_curve_valores[-1] if equity_curve_valores else 0,
+        'exposicao_atual': equity_curve_exposicao[-1] if equity_curve_exposicao else 0,
+    }
+    
+    return render(request, 'trading/relatorios.html', context)

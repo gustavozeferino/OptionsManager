@@ -23,4 +23,7 @@ urlpatterns = [
     
     # Ações em Ordens
     path('ordens/<int:ordem_id>/excluir/', views.excluir_ordem, name='excluir_ordem'),
+
+    # Relatórios
+    path('relatorios/', views.relatorio_performance, name='relatorio_performance'),
 ]
