@@ -103,6 +103,17 @@ class AtivoB3(models.Model):
     atualizado_em = models.DateTimeField(_('Atualizado em'), auto_now=True)
     
     @property
+    def tipo_display(self):
+        if not self.tipo_opcao:
+            return "Ação"
+        tipo = self.tipo_opcao.upper()
+        if "COMPRA" in tipo or "CALL" in tipo:
+            return "CALL"
+        if "VENDA" in tipo or "PUT" in tipo:
+            return "PUT"
+        return self.tipo_opcao
+
+    @property
     def dte(self):
         if self.data_expiracao:
             hoje = date.today()

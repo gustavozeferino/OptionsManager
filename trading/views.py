@@ -226,6 +226,7 @@ def detalhe_estrutura(request, slug):
     snapshots = estrutura.historico_snapshots.order_by('data')
     datas_chart = [obj.data.strftime('%d/%m/%Y') for obj in snapshots]
     valores_chart = [float(obj.valor_total) for obj in snapshots]
+    exposicao_chart = [float(obj.exposicao_diaria) for obj in snapshots]
     
     context = {
         'estrutura': estrutura,
@@ -235,6 +236,7 @@ def detalhe_estrutura(request, slug):
         'snapshots': snapshots,
         'datas_chart': json.dumps(datas_chart),
         'valores_chart': json.dumps(valores_chart),
+        'exposicao_chart': json.dumps(exposicao_chart),
         'has_open_positions': len(posicoes_abertas) > 0,
     }
     return render(request, 'trading/detalhe_estrutura.html', context)

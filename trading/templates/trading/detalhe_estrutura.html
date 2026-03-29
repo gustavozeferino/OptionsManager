@@ -103,13 +103,27 @@
     </div>
 </div>
 
-<!-- Gráfico de Evolução -->
-<div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-white pt-3 pb-2">
-        <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i> Evolução Diária</h5>
+<!-- Gráficos de Evolução -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white pt-3 pb-2">
+                <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i> Evolução Diária (Equity)</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-estrutura" style="width: 100%; height: 250px;"></div>
+            </div>
+        </div>
     </div>
-    <div class="card-body">
-        <div id="chart-estrutura" style="width: 100%; height: 250px;"></div>
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white pt-3 pb-2">
+                <h5 class="card-title mb-0"><i class="fas fa-chart-bar me-2"></i> Exposição Diária</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-exposicao" style="width: 100%; height: 250px;"></div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -126,7 +140,9 @@
                         <thead class="table-light">
                             <tr>
                                 <th>Ativo</th>
+                                <th>Tipo</th>
                                 <th class="text-end">Strike</th>
+                                <th class="text-center">Vencimento</th>
                                 <th class="text-end">Qtd</th>
                                 <th class="text-end">Preço Médio</th>
                                 <th class="text-end">Último Preço</th>
@@ -140,7 +156,15 @@
                             {% for pos in posicoes_abertas %}
                             <tr>
                                 <td class="fw-bold">{{ pos.ativo.ticker }}</td>
+                                <td>
+                                    <span class="badge {% if pos.ativo.tipo_display == 'CALL' %}bg-success{% elif pos.ativo.tipo_display == 'PUT' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                        {{ pos.ativo.tipo_display }}
+                                    </span>
+                                </td>
                                 <td class="text-end">{{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}</td>
+                                <td class="text-center text-muted" style="font-size: 0.85rem;">
+                                    {% if pos.ativo.data_expiracao %}{{ pos.ativo.data_expiracao|date:"d/m/y" }}{% else %}-{% endif %}
+                                </td>
                                 <td class="text-end">
                                     <span
                                         class="badge {% if pos.quantidade_atual > 0 %}bg-success{% elif pos.quantidade_atual < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
@@ -168,7 +192,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="9" class="text-center text-muted py-4">Nenhuma posição ativa.</td>
+                                <td colspan="11" class="text-center text-muted py-4">Nenhuma posição ativa.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -190,6 +214,7 @@
                         <thead class="table-light">
                             <tr>
                                 <th>Ativo</th>
+                                <th>Tipo</th>
                                 <th class="text-end">Preço Médio</th>
                                 <th class="text-end">PL Realizado</th>
                                 <th class="text-center">Início</th>
@@ -201,6 +226,11 @@
                             {% for pos in posicoes_fechadas %}
                             <tr>
                                 <td class="fw-bold">{{ pos.ativo.ticker }}</td>
+                                <td>
+                                    <span class="badge {% if pos.ativo.tipo_display == 'CALL' %}bg-success{% elif pos.ativo.tipo_display == 'PUT' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                        {{ pos.ativo.tipo_display }}
+                                    </span>
+                                </td>
                                 <td class="text-end">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
                                 <td
                                     class="text-end fw-bold {% if pos.pl_realizado_acumulado > 0 %}text-success{% elif pos.pl_realizado_acumulado < 0 %}text-danger{% endif %}">
@@ -212,7 +242,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="6" class="text-center text-muted py-4">Nenhuma posição finalizada.</td>
+                                <td colspan="7" class="text-center text-muted py-4">Nenhuma posição finalizada.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -235,6 +265,7 @@
                     <tr>
                         <th>Data</th>
                         <th>Ativo</th>
+                        <th>Tipo</th>
                         <th class="text-end">Strike</th>
                         <th class="text-center">Vencimento</th>
                         <th class="text-center">Operação</th>
@@ -249,6 +280,11 @@
                     <tr>
                         <td>{{ ordem.data|date:"d/m/Y" }}</td>
                         <td class="fw-bold">{{ ordem.ativo.ticker }}</td>
+                        <td>
+                            <span class="badge {% if ordem.ativo.tipo_display == 'CALL' %}bg-success{% elif ordem.ativo.tipo_display == 'PUT' %}bg-danger{% else %}bg-secondary{% endif %} badge-sm">
+                                {{ ordem.ativo.tipo_display }}
+                            </span>
+                        </td>
                         <td class="text-end">
                             {% if ordem.ativo.preco_exercicio %}
                             {{ ordem.ativo.preco_exercicio|floatformat:2|intcomma}}
@@ -282,7 +318,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-4">Nenhuma ordem registrada.</td>
+                        <td colspan="10" class="text-center text-muted py-4">Nenhuma ordem registrada.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -342,14 +378,15 @@
             return;
         }
 
-        var myChart = echarts.init(chartDom);
-        var option = {
+        // Equity Chart
+        var chartEquity = echarts.init(document.getElementById('chart-estrutura'));
+        var optionEquity = {
             tooltip: { trigger: 'axis' },
             grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
             xAxis: { type: 'category', boundaryGap: false, data: datas },
             yAxis: { type: 'value' },
             series: [{
-                name: 'Total',
+                name: 'Patrimônio',
                 type: 'line',
                 smooth: true,
                 lineStyle: { width: 3, color: '#198754' },
@@ -363,9 +400,42 @@
                 data: valores
             }]
         };
+        chartEquity.setOption(optionEquity);
 
-        option && myChart.setOption(option);
-        window.addEventListener('resize', function () { myChart.resize(); });
+        // Exposure Chart
+        const rawExposicao = '{{ exposicao_chart|escapejs }}';
+        let valoresExposicao = [];
+        try {
+            valoresExposicao = JSON.parse(rawExposicao);
+        } catch (e) { console.error(e); }
+
+        var chartExposicao = echarts.init(document.getElementById('chart-exposicao'));
+        var optionExposicao = {
+            tooltip: { trigger: 'axis' },
+            grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+            xAxis: { type: 'category', boundaryGap: false, data: datas },
+            yAxis: { type: 'value' },
+            series: [{
+                name: 'Exposição',
+                type: 'line',
+                smooth: true,
+                lineStyle: { width: 3, color: '#0dcaf0' },
+                itemStyle: { color: '#0dcaf0' },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(13, 202, 240, 0.5)' },
+                        { offset: 1, color: 'rgba(13, 202, 240, 0.1)' }
+                    ])
+                },
+                data: valoresExposicao
+            }]
+        };
+        chartExposicao.setOption(optionExposicao);
+
+        window.addEventListener('resize', function () { 
+            chartEquity.resize(); 
+            chartExposicao.resize();
+        });
     });
 </script>
 
