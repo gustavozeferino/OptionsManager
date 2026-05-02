@@ -13,5 +13,6 @@ urlpatterns = [
     path('remover-historico-precos-duplicados/', views.remover_historico_precos_duplicados, name='remover_historico_precos_duplicados'),
     path('logs/', views.lista_logs, name='lista_logs'),
     path('recalcular-estruturas/', views.recalcular_estruturas, name='recalcular_estruturas'),
+    path('liquidez-vencimentos/', views.liquidez_vencimentos, name='liquidez_vencimentos'),
     path('ativo/<str:ticker>/', views.detalhe_ativo, name='detalhe_ativo'),
 ]

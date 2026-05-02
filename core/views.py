@@ -16,6 +16,8 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Count, Max
 from trading.models import Estrutura
 from trading.services import recalcular_estrutura
+from collections import defaultdict
+from django.db.models import Sum, Avg, Q
 
 def apenas_admin(user):
     return user.is_superuser
@@ -729,3 +731,169 @@ def recalcular_estruturas(request):
         
     messages.success(request, f"Sucesso! {total} estruturas foram recalculadas.")
     return redirect('core:home')
+
+@user_passes_test(apenas_admin)
+def liquidez_vencimentos(request):
+    """
+    View para Monitoramento de Liquidez por Volume Financeiro.
+    """
+    ticker_filtro = request.GET.get('ticker', 'BOVA11')
+    periodo_dias = 30
+    apenas_mensal = True
+
+    # 1. Ativos Monitorados para o Filtro
+    ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).order_by('ticker')
+    
+    # 2. Filtra Ativos B3 do Ticker (apenas vencimentos futuros)
+    hoje = timezone.now().date()
+    ativos_b3_base = AtivoB3.objects.filter(ativo_objeto=ticker_filtro, data_expiracao__gte=hoje)
+    
+    if apenas_mensal:
+        ativos_b3_base = ativos_b3_base.filter(classificacao_vencimento='Mensal')
+
+    # 3. Busca Histórico de Preços (90 dias + 21 para médias)
+    data_limite = timezone.now().date() - datetime.timedelta(days=periodo_dias + 30)
+    historico = HistoricoPreco.objects.filter(
+        ativo__in=ativos_b3_base,
+        data_pregao__gte=data_limite
+    ).select_related('ativo').order_by('data_pregao')
+
+    if not historico.exists():
+        return render(request, 'core/liquidez_vencimentos.html', {
+            'ativos_monitorados': ativos_monitorados,
+            'ticker_filtro': ticker_filtro,
+            'apenas_mensal': apenas_mensal,
+            'periodo_dias': periodo_dias,
+            'empty': True
+        })
+
+    # 4. Processamento de Dados
+    # Agrupar volume por [Vencimento][DataPregão]
+    vol_por_venc_data = defaultdict(lambda: defaultdict(float))
+    # Agrupar volume por [Vencimento][Strike][Tipo] -> Média dos últimos 5 dias
+    vol_por_venc_strike_tipo = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    
+    datas_pregao_set = set()
+    vencimentos_set = set()
+    
+    for h in historico:
+        venc = h.ativo.data_expiracao
+        data_p = h.data_pregao
+        vol = float(h.volume_financeiro)
+        tipo_str = h.ativo.tipo_opcao.upper() if h.ativo.tipo_opcao else ''
+        tipo = 'CALL' if ('COMPRA' in tipo_str or 'CALL' in tipo_str) else 'PUT'
+        strike = float(h.ativo.preco_exercicio or 0)
+        
+        vol_por_venc_data[venc][data_p] += vol
+        vol_por_venc_strike_tipo[venc][strike][tipo].append({'data': data_p, 'vol': vol})
+        
+        datas_pregao_set.add(data_p)
+        vencimentos_set.add(venc)
+
+    sorted_datas_pregao = sorted(list(datas_pregao_set))
+    sorted_vencimentos = sorted(list(vencimentos_set))
+    
+    # 5. Cálculo das Médias Móveis por Vencimento
+    # Queremos os valores das médias NA ÚLTIMA DATA disponível para cada vencimento
+    resumo_vencimentos = []
+    
+    for venc in sorted_vencimentos:
+        diario = vol_por_venc_data[venc]
+        datas_venc = sorted(diario.keys())
+        
+        if not datas_venc: continue
+        
+        # Últimos 5 e 21 pregões que tiveram dados para este vencimento
+        v_5d = [diario[d] for d in datas_venc[-5:]]
+        v_21d = [diario[d] for d in datas_venc[-21:]]
+        
+        avg_5d = sum(v_5d) / len(v_5d) if v_5d else 0
+        avg_21d = sum(v_21d) / len(v_21d) if v_21d else 0
+        ratio = avg_5d / avg_21d if avg_21d > 0 else 0
+        
+        # Proporção Call/Put nos últimos 5 dias
+        vol_call_5d = 0
+        vol_put_5d = 0
+        for d in datas_venc[-5:]:
+            vol_call_5d += sum(sum(x['vol'] for x in vol_por_venc_strike_tipo[venc][s]['CALL'] if x['data'] == d) for s in vol_por_venc_strike_tipo[venc])
+            vol_put_5d += sum(sum(x['vol'] for x in vol_por_venc_strike_tipo[venc][s]['PUT'] if x['data'] == d) for s in vol_por_venc_strike_tipo[venc])
+            
+        total_5d = vol_call_5d + vol_put_5d
+        perc_call = (vol_call_5d / total_5d * 100) if total_5d > 0 else 50
+        perc_put = (vol_put_5d / total_5d * 100) if total_5d > 0 else 50
+
+        resumo_vencimentos.append({
+            'vencimento': venc,
+            'vencimento_str': venc.strftime('%Y-%m-%d'),
+            'vencimento_br': venc.strftime('%d/%m/%y'),
+            'avg_5d': avg_5d,
+            'avg_21d': avg_21d,
+            'ratio': ratio,
+            'perc_call': perc_call,
+            'perc_put': perc_put
+        })
+
+    # 6. Gráficos B & C: Dados para todos os vencimentos ativos (para frontend alternar dinamicamente)
+    evolucao_data_all = {}
+    strike_data_all = {}
+    
+    for venc in sorted_vencimentos:
+        v_str = venc.strftime('%Y-%m-%d')
+        
+        # Gráfico B: Evolução SMA 5d vs 21d
+        diario_sel = vol_por_venc_data[venc]
+        datas_sel = sorted(diario_sel.keys())
+        
+        evolucao_data = []
+        for i, d in enumerate(datas_sel):
+            v_5 = [diario_sel[datas_sel[j]] for j in range(max(0, i-4), i+1)]
+            v_21 = [diario_sel[datas_sel[j]] for j in range(max(0, i-20), i+1)]
+            evolucao_data.append({
+                'data': d.strftime('%d/%m/%Y'),
+                'vol': diario_sel[d],
+                'sma5': sum(v_5) / len(v_5),
+                'sma21': sum(v_21) / len(v_21)
+            })
+        evolucao_data_all[v_str] = evolucao_data
+
+        # Gráfico C: Volume por Strike (Média 5d)
+        strikes_sel = sorted(vol_por_venc_strike_tipo[venc].keys())
+        distribuicao_strike = []
+        for s in strikes_sel:
+            c_vols = [x['vol'] for x in vol_por_venc_strike_tipo[venc][s]['CALL']][-5:]
+            p_vols = [x['vol'] for x in vol_por_venc_strike_tipo[venc][s]['PUT']][-5:]
+            distribuicao_strike.append({
+                'strike': s,
+                'call_vol': sum(c_vols) / len(c_vols) if c_vols else 0,
+                'put_vol': sum(p_vols) / len(p_vols) if p_vols else 0
+            })
+        strike_data_all[v_str] = distribuicao_strike
+
+    # Define um vencimento padrão para inicialização do frontend
+    vencimento_selecionado_default = ""
+    if resumo_vencimentos:
+        vencimento_selecionado_default = sorted(resumo_vencimentos, key=lambda x: x['avg_5d'], reverse=True)[0]['vencimento_str']
+
+    # Preço Atual do Ativo Objeto (para a linha ATM)
+    ativo_obj = AtivoB3.objects.filter(ticker=ticker_filtro).first()
+    preco_atm = 0
+    if ativo_obj:
+        last_p = HistoricoPreco.objects.filter(ativo=ativo_obj).order_by('-data_pregao').first()
+        if last_p: preco_atm = float(last_p.fechamento)
+
+    context = {
+        'ativos_monitorados': ativos_monitorados,
+        'ticker_filtro': ticker_filtro,
+        'resumo_vencimentos': resumo_vencimentos,
+        'evolucao_json_all': json.dumps(evolucao_data_all),
+        'strike_json_all': json.dumps(strike_data_all),
+        'resumo_json': json.dumps([{
+            'vencimento': r['vencimento_br'], 
+            'avg_5d': r['avg_5d'], 
+            'avg_21d': r['avg_21d']
+        } for r in resumo_vencimentos]),
+        'vencimento_selecionado_default': vencimento_selecionado_default,
+        'preco_atm': preco_atm,
+    }
+    
+    return render(request, 'core/liquidez_vencimentos.html', context)

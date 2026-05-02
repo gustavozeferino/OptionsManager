@@ -27,7 +27,7 @@ def limpar_data(valor):
         return None
 
 def importar():
-    csv_path = 'input_data/Cadastro de instrumentos-18-02-2026.csv'
+    csv_path = 'input_data/instrumentos/Cadastro de instrumentos-30-04-2026.csv'
     
     if not os.path.exists(csv_path):
         print(f"ERRO: Arquivo não encontrado em {csv_path}")
@@ -59,7 +59,8 @@ def importar():
     
     print("Colunas normalizadas:", df.columns.tolist())
 
-    ativos_interesse = ['BOVA11', 'PETR4', 'VALE3']
+    from core.models import AtivoMonitorado
+    ativos_interesse = list(AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True))
     # Filtra removendo espaços extras que podem vir no CSV
     df['Ativo'] = df['Ativo'].astype(str).str.strip()
     df_filtrado = df[df['Ativo'].isin(ativos_interesse)].copy()
@@ -104,6 +105,12 @@ def importar():
             print(f"Erro no registro {row.get('Instrumento financeiro')}: {e}")
 
     print(f"\n--- SUCESSO! {contagem} registros no banco de dados. ---")
+    
+    print("Classificando vencimentos (Mensal/Semanal)...")
+    for ticker in ativos_interesse:
+        print(f"  > {ticker}...")
+        AtivoB3.classificar_vencimentos(ativo_objeto=ticker)
+    print("Fim da classificação.")
 
 if __name__ == '__main__':
     importar()

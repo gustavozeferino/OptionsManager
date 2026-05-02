@@ -1,0 +1,252 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Liquidez de Vencimentos - OptionsManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chart-container {
+        height: 400px;
+        width: 100%;
+    }
+    .ratio-up { color: #26A69A; font-weight: bold; }
+    .ratio-down { color: #EF5350; font-weight: bold; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i class="fas fa-chart-bar me-2"></i>Monitoramento de Liquidez</h1>
+        <p class="text-muted small mb-0">Análise de Volume Financeiro e Fluxo de Vencimentos</p>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-center">
+            <div class="col-auto">
+                <label class="fw-bold mb-0">Ativo Objeto:</label>
+            </div>
+            <div class="col-auto">
+                <select name="ticker" class="form-select" onchange="this.form.submit()">
+                    {% for am in ativos_monitorados %}
+                    <option value="{{ am.ticker }}" {% if ticker_filtro == am.ticker %}selected{% endif %}>{{ am.ticker }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if empty %}
+<div class="alert alert-info">
+    Nenhum dado de volume encontrado para o ativo <strong>{{ ticker_filtro }}</strong> no período selecionado.
+</div>
+{% else %}
+
+<div class="row mb-4">
+    <!-- Gráfico A: Comparação de Volume por Vencimento -->
+    <div class="col-12">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white fw-bold">
+                <i class="fas fa-columns me-2 text-primary"></i>Comparação por Vencimento (Médias)
+            </div>
+            <div class="card-body">
+                <div id="chartVencimentos" class="chart-container"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0 bg-light">
+            <div class="card-body py-2">
+                <div class="row align-items-center">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold mb-0">Selecione o Vencimento para os gráficos abaixo:</label>
+                    </div>
+                    <div class="col-md-4">
+                        <select id="selectVencimentoGraficos" class="form-select form-select-sm shadow-sm border-primary">
+                            {% for r in resumo_vencimentos %}
+                            <option value="{{ r.vencimento|date:'Y-m-d' }}" {% if vencimento_selecionado_default == r.vencimento|date:'Y-m-d' %}selected{% endif %}>
+                                {{ r.vencimento|date:'d/m/Y' }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Gráfico C: Perfil por Strike -->
+    <div class="col-12 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white fw-bold">
+                <i class="fas fa-align-left me-2 text-primary"></i>Concentração por Strike - Vencimento <span id="tituloVencStrike"></span>
+            </div>
+            <div class="card-body">
+                <div id="chartStrikes" class="chart-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráfico B: Evolução Médias -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white fw-bold">
+                <i class="fas fa-chart-line me-2 text-primary"></i>Evolução de Liquidez (Últimos 30 dias) - Vencimento <span id="tituloVencEvolucao"></span>
+            </div>
+            <div class="card-body">
+                <div id="chartEvolucao" class="chart-container"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabela de Resumo -->
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white fw-bold">
+        <i class="fas fa-table me-2"></i>Resumo de Fluxo por Vencimento
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Vencimento</th>
+                        <th class="text-end">Vol. Médio (5d)</th>
+                        <th class="text-end">Vol. Médio (21d)</th>
+                        <th class="text-center">Ratio (5d/21d)</th>
+                        <th class="text-center">Vol Call - Put (5d)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in resumo_vencimentos %}
+                    <tr>
+                        <td><strong>{{ r.vencimento_br }}</strong></td>
+                        <td class="text-end text-muted small">R$ {{ r.avg_5d|floatformat:2 }}</td>
+                        <td class="text-end text-muted small">R$ {{ r.avg_21d|floatformat:2 }}</td>
+                        <td class="text-center">
+                            <span class="badge {% if r.ratio >= 1 %}bg-success{% else %}bg-danger{% endif %} py-2 px-3">
+                                {{ r.ratio|floatformat:2 }}
+                                <i class="fas fa-arrow-{% if r.ratio >= 1 %}up{% else %}down{% endif %} ms-1"></i>
+                            </span>
+                        </td>
+                        <td style="width: 250px;">
+                            <div class="progress" style="height: 20px;" title="Call: {{ r.perc_call|floatformat:1 }}% / Put: {{ r.perc_put|floatformat:1 }}%">
+                                <div class="progress-bar" role="progressbar" style="width: {{ r.perc_call|stringformat:'.1f' }}%; background-color: #1976D2;" aria-valuenow="{{ r.perc_call|stringformat:'.0f' }}" aria-valuemin="0" aria-valuemax="100">{{ r.perc_call|floatformat:0 }}%</div>
+                                <div class="progress-bar" role="progressbar" style="width: {{ r.perc_put|stringformat:'.1f' }}%; background-color: #9E9E9E;" aria-valuenow="{{ r.perc_put|stringformat:'.0f' }}" aria-valuemin="0" aria-valuemax="100">{{ r.perc_put|floatformat:0 }}%</div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'core/js/echarts.min.js' %}"></script>
+<script src="{% static 'core/js/vintage.js' %}"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const formatCurrency = (val) => 'R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        
+        // Dados do Backend
+        const evolucaoDataAll = {{ evolucao_json_all|safe }};
+        const strikeDataAll = {{ strike_json_all|safe }};
+        const resumoData = {{ resumo_json|safe }};
+        const precoATM = {{ preco_atm }};
+        
+        let vencimentoAtual = document.getElementById('selectVencimentoGraficos').value;
+
+        // --- Gráfico A: Comparação de Volume por Vencimento ---
+        const chartVenc = echarts.init(document.getElementById('chartVencimentos'), 'vintage');
+        chartVenc.setOption({
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['Média 5d', 'Média 21d'], bottom: 0 },
+            grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+            xAxis: { type: 'category', data: resumoData.map(d => d.vencimento) },
+            yAxis: { type: 'value', name: 'Volume (R$)' },
+            series: [
+                { name: 'Média 5d', type: 'bar', data: resumoData.map(d => d.avg_5d), color: '#26A69A' },
+                { name: 'Média 21d', type: 'bar', data: resumoData.map(d => d.avg_21d), color: '#9E9E9E' }
+            ]
+        });
+
+        const chartEvol = echarts.init(document.getElementById('chartEvolucao'), 'vintage');
+        const chartStrk = echarts.init(document.getElementById('chartStrikes'), 'vintage');
+
+        function atualizarGraficosDependentes(vencimento) {
+            if (!evolucaoDataAll[vencimento] || !strikeDataAll[vencimento]) return;
+            
+            const evolData = evolucaoDataAll[vencimento];
+            const strkData = strikeDataAll[vencimento];
+            
+            // Atualizar títulos dinâmicos
+            const selectEl = document.getElementById('selectVencimentoGraficos');
+            const textoVencimento = selectEl.options[selectEl.selectedIndex].text;
+            document.getElementById('tituloVencStrike').textContent = textoVencimento;
+            document.getElementById('tituloVencEvolucao').textContent = textoVencimento;
+
+            // --- Gráfico B: Evolução Médias ---
+            chartEvol.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['Volume Diário', 'SMA 5d', 'SMA 21d'], bottom: 0 },
+                grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+                xAxis: { type: 'category', data: evolData.map(d => d.data) },
+                yAxis: { type: 'value' },
+                series: [
+                    { name: 'Volume Diário', type: 'line', data: evolData.map(d => d.vol), smooth: true, areaStyle: { opacity: 0.1 }, color: '#9E9E9E' },
+                    { name: 'SMA 5d', type: 'line', data: evolData.map(d => d.sma5), smooth: true, color: '#26A69A' },
+                    { name: 'SMA 21d', type: 'line', data: evolData.map(d => d.sma21), smooth: true, color: '#EF5350' }
+                ]
+            });
+
+            // --- Gráfico C: Volume por Strike ---
+            chartStrk.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                legend: { data: ['Call', 'Put'], bottom: 0 },
+                grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+                xAxis: { type: 'category', data: strkData.map(d => d.strike), name: 'Strike' },
+                yAxis: { type: 'value', name: 'Vol Médio 5d' },
+                series: [
+                    { name: 'Call', type: 'bar', stack: 'total', data: strkData.map(d => d.call_vol), color: '#1976D2' },
+                    { name: 'Put', type: 'bar', stack: 'total', data: strkData.map(d => d.put_vol), color: '#9E9E9E' }
+                ],
+                markLine: {
+                    symbol: ['none', 'none'],
+                    label: { show: true, formatter: 'ATM: ' + precoATM.toFixed(2) },
+                    lineStyle: { type: 'dashed', color: '#333' },
+                    data: [{ xAxis: strkData.findIndex(d => d.strike >= precoATM).toString() }]
+                }
+            });
+        }
+
+        // Inicializa gráficos dependentes
+        atualizarGraficosDependentes(vencimentoAtual);
+
+        // Event listener para mudança de vencimento
+        document.getElementById('selectVencimentoGraficos').addEventListener('change', function(e) {
+            atualizarGraficosDependentes(e.target.value);
+        });
+
+        window.addEventListener('resize', () => {
+            chartVenc.resize();
+            chartEvol.resize();
+            chartStrk.resize();
+        });
+    });
+</script>
+{% endblock %}

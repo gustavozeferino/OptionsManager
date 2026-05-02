@@ -24,8 +24,9 @@ def importar_csv_b3(file_path):
             'erros': list
         }
     """
-    # Lista de ativos permitidos para importação
-    ATIVOS_PERMITIDOS = ['BOVA11', 'PETR4', 'VALE3']
+    # Lista de ativos monitorados no dashboard
+    from .models import AtivoMonitorado
+    ATIVOS_PERMITIDOS = list(AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True))
     
     stats = {
         'total_lidas': 0,
