@@ -75,7 +75,12 @@ def buscar_ativos(request):
     termo = request.GET.get('q', '').strip()
     ativos = AtivoB3.objects.filter(ticker__icontains=termo)[:20] if termo else AtivoB3.objects.all()[:20]
     
-    resultados = [{'id': ativo.codigo_isin, 'text': f"{ativo.ticker} - {ativo.ativo_objeto}"} for ativo in ativos]
+    resultados = [{
+        'id': ativo.codigo_isin, 
+        'text': f"{ativo.ticker} - {ativo.ativo_objeto}",
+        'tipo': ativo.tipo_opcao,
+        'strike': str(ativo.preco_exercicio) if ativo.preco_exercicio else ''
+    } for ativo in ativos]
     return JsonResponse({'results': resultados})
 
 @login_required

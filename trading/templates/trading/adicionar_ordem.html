@@ -54,6 +54,16 @@
                         </div>
                     </div>
 
+                    <div class="row" id="strike-row" style="display: none;">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold text-muted">Strike do Ativo (Automático)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted">R$</span>
+                                <input type="text" id="ativo-strike-display" class="form-control bg-light text-muted" readonly disabled>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="alert alert-info py-2 mt-2">
                         <i class="fas fa-info-circle me-2"></i>
                         As posições e resultados da estrutura serão recalculados automaticamente após o salvamento.
@@ -102,6 +112,17 @@
                                         // We just want the ticker part "PETR4"
                                         inputAtivo.value = item.text.split(" - ")[0];
                                         suggestionsBox.style.display = "none";
+                                        
+                                        // Mostrar/Ocultar Strike
+                                        const strikeRow = document.getElementById("strike-row");
+                                        const strikeInput = document.getElementById("ativo-strike-display");
+                                        if (item.tipo && item.tipo !== "Ação" && item.tipo !== "") {
+                                            strikeRow.style.display = "flex";
+                                            strikeInput.value = parseFloat(item.strike).toFixed(2);
+                                        } else {
+                                            strikeRow.style.display = "none";
+                                            strikeInput.value = "";
+                                        }
                                     };
                                     suggestionsBox.appendChild(li);
                                 });

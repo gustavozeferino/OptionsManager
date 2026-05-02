@@ -235,6 +235,7 @@ class HistoricoPreco(models.Model):
     # Dados de volume
     quantidade_negocios = models.IntegerField(default=0)
     volume_financeiro = models.DecimalField(max_digits=20, decimal_places=2, default=0.0)
+    quantidade_contratos = models.IntegerField(default=0)
 
     class Meta:
         # Garante que não teremos duas linhas para o mesmo ativo no mesmo dia

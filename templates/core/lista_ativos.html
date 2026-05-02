@@ -95,6 +95,49 @@
 {% else %}
     <!-- GRADE DE OPÇÕES (Option Chain) -->
     
+    {% if stats_ativo %}
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-dark text-white text-center shadow-sm h-100">
+                <div class="card-body py-3">
+                    <h6 class="text-uppercase text-muted mb-1">{{ ativo_filtro }} (Fechamento)</h6>
+                    <h3 class="mb-0">R$ {{ stats_ativo.preco_atual|floatformat:2 }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center shadow-sm h-100">
+                <div class="card-body py-3">
+                    <h6 class="text-uppercase text-muted mb-1">Var. Diária</h6>
+                    <h3 class="mb-0 {% if stats_ativo.var_diaria > 0 %}text-success{% elif stats_ativo.var_diaria < 0 %}text-danger{% endif %}">
+                        {% if stats_ativo.var_diaria > 0 %}+{% endif %}{{ stats_ativo.var_diaria|floatformat:2 }}%
+                    </h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center shadow-sm h-100">
+                <div class="card-body py-3">
+                    <h6 class="text-uppercase text-muted mb-1">Var. 5 Dias</h6>
+                    <h3 class="mb-0 {% if stats_ativo.var_5d > 0 %}text-success{% elif stats_ativo.var_5d < 0 %}text-danger{% endif %}">
+                        {% if stats_ativo.var_5d > 0 %}+{% endif %}{{ stats_ativo.var_5d|floatformat:2 }}%
+                    </h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center shadow-sm h-100">
+                <div class="card-body py-3">
+                    <h6 class="text-uppercase text-muted mb-1">Var. 30 Dias</h6>
+                    <h3 class="mb-0 {% if stats_ativo.var_30d > 0 %}text-success{% elif stats_ativo.var_30d < 0 %}text-danger{% endif %}">
+                        {% if stats_ativo.var_30d > 0 %}+{% endif %}{{ stats_ativo.var_30d|floatformat:2 }}%
+                    </h3>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
     {% if not anos_dict %}
         <div class="alert alert-warning">
             Nenhum vencimento encontrado para o ativo {{ ativo_filtro }}.
@@ -147,14 +190,16 @@
                         <thead>
                             <!-- Cabeçalho Principal -->
                             <tr>
-                                <th colspan="4" class="bg-success text-white py-2" style="width: 45%;">CALLS (Opções de Compra)</th>
+                                <th colspan="6" class="bg-success text-white py-2" style="width: 45%;">CALLS (Opções de Compra)</th>
                                 <th class="bg-dark text-white py-2" style="width: 10%;">STRIKE</th>
-                                <th colspan="4" class="bg-danger text-white py-2" style="width: 45%;">PUTS (Opções de Venda)</th>
+                                <th colspan="6" class="bg-danger text-white py-2" style="width: 45%;">PUTS (Opções de Venda)</th>
                             </tr>
                             <!-- Sub Cabeçalho -->
                             <tr class="table-light text-muted small">
                                 <th>Código</th>
-                                <th>Vol</th>
+                                <th>Vol. Fin.</th>
+                                <th>Contratos</th>
+                                <th>VWAP</th>
                                 <th>Data Últ.</th>
                                 <th>Último</th>
                                 
@@ -162,7 +207,9 @@
                                 
                                 <th>Último</th>
                                 <th>Data Últ.</th>
-                                <th>Vol</th>
+                                <th>VWAP</th>
+                                <th>Contratos</th>
+                                <th>Vol. Fin.</th>
                                 <th>Código</th>
                             </tr>
                         </thead>
@@ -172,11 +219,13 @@
                                 <!-- Lado CALLs -->
                                 {% if option.call %}
                                     <td class="fw-bold"><a href="{% url 'core:detalhe_ativo' option.call.ticker %}" class="text-success text-decoration-none">{{ option.call.ticker }}</a></td>
-                                    <td class="text-muted small">{% if option.call_hist %}{{ option.call_hist.quantidade_negocios }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.call_hist %}R$ {{ option.call_hist.volume_financeiro|floatformat:2 }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.call_hist %}{{ option.call_hist.quantidade_contratos }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.call_hist and option.call_hist.vwap_calculado > 0 %}R$ {{ option.call_hist.vwap_calculado|floatformat:2 }}{% else %}-{% endif %}</td>
                                     <td class="text-muted small">{% if option.call_hist %}{{ option.call_hist.data_pregao|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                                     <td class="fw-bold">{% if option.call_hist and option.call_hist.fechamento > 0 %}R$ {{ option.call_hist.fechamento|floatformat:2 }}{% else %}-{% endif %}</td>
                                 {% else %}
-                                    <td>-</td><td>-</td><td>-</td><td>-</td>
+                                    <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
                                 {% endif %}
                                 
                                 <!-- Centro STRIKE -->
@@ -192,10 +241,12 @@
                                 {% if option.put %}
                                     <td class="fw-bold">{% if option.put_hist and option.put_hist.fechamento > 0 %}R$ {{ option.put_hist.fechamento|floatformat:2 }}{% else %}-{% endif %}</td>
                                     <td class="text-muted small">{% if option.put_hist %}{{ option.put_hist.data_pregao|date:"d/m/Y" }}{% else %}-{% endif %}</td>
-                                    <td class="text-muted small">{% if option.put_hist %}{{ option.put_hist.quantidade_negocios }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.put_hist and option.put_hist.vwap_calculado > 0 %}R$ {{ option.put_hist.vwap_calculado|floatformat:2 }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.put_hist %}{{ option.put_hist.quantidade_contratos }}{% else %}-{% endif %}</td>
+                                    <td class="text-muted small">{% if option.put_hist %}R$ {{ option.put_hist.volume_financeiro|floatformat:2 }}{% else %}-{% endif %}</td>
                                     <td class="fw-bold"><a href="{% url 'core:detalhe_ativo' option.put.ticker %}" class="text-danger text-decoration-none">{{ option.put.ticker }}</a></td>
                                 {% else %}
-                                    <td>-</td><td>-</td><td>-</td><td>-</td>
+                                    <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
                                 {% endif %}
                             </tr>
                             {% empty %}

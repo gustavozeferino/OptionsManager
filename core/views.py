@@ -80,6 +80,20 @@ def clean_numeric(value):
     except ValueError:
         return 0.0
 
+def clean_int(value):
+    """Trata inteiros, removendo pontos de milhar (formato BR)."""
+    if pd.isna(value) or str(value).strip() in ['', '-']:
+        return 0
+    # Remove pontos de milhar (ex: 5.284 -> 5284)
+    s = str(value).replace('.', '').strip()
+    # Se houver vírgula, pegamos apenas a parte inteira (ex: 5284,00 -> 5284)
+    if ',' in s:
+        s = s.split(',')[0]
+    try:
+        return int(s)
+    except ValueError:
+        return 0
+
 def clean_date(value):
     """Trata datas, ignorando hífens ou valores inválidos."""
     if pd.isna(value) or str(value).strip() in ['', '-']:
@@ -309,6 +323,11 @@ def lista_ativos(request):
     precos_recentes = {}
     for h in historicos:
         if h.ativo_id not in precos_recentes:
+            # Calcular VWAP
+            if h.quantidade_contratos and h.quantidade_contratos > 0:
+                h.vwap_calculado = float(h.volume_financeiro) / float(h.quantidade_contratos)
+            else:
+                h.vwap_calculado = 0.0
             precos_recentes[h.ativo_id] = h
 
     # Option Chain Builder
@@ -330,6 +349,43 @@ def lista_ativos(request):
     chain_list = list(option_chain_dict.values())
     chain_list.sort(key=lambda x: x['strike'] if x['strike'] else 0)
 
+    # Estatísticas do Ativo Objeto
+    ativo_obj_b3 = AtivoB3.objects.filter(ticker=ativo_filtro).first()
+    stats_ativo = None
+    if ativo_obj_b3:
+        hist_ativo = HistoricoPreco.objects.filter(ativo=ativo_obj_b3, fechamento__gt=0).order_by('-data_pregao')
+        if hist_ativo.exists():
+            stats_ativo = {}
+            h_atual = hist_ativo.first()
+            stats_ativo['preco_atual'] = float(h_atual.fechamento)
+            
+            # Variação Diária (comparado ao dia anterior)
+            if hist_ativo.count() > 1:
+                h_ontem = hist_ativo[1]
+                stats_ativo['var_diaria'] = ((float(h_atual.fechamento) / float(h_ontem.fechamento)) - 1) * 100 if float(h_ontem.fechamento) else 0
+            else:
+                stats_ativo['var_diaria'] = 0
+                
+            # Variação 5 dias
+            if hist_ativo.count() > 5:
+                h_5d = hist_ativo[5]
+                stats_ativo['var_5d'] = ((float(h_atual.fechamento) / float(h_5d.fechamento)) - 1) * 100 if float(h_5d.fechamento) else 0
+            elif hist_ativo.count() > 1:
+                h_5d = hist_ativo.last()
+                stats_ativo['var_5d'] = ((float(h_atual.fechamento) / float(h_5d.fechamento)) - 1) * 100 if float(h_5d.fechamento) else 0
+            else:
+                stats_ativo['var_5d'] = 0
+                
+            # Variação 30 dias
+            if hist_ativo.count() > 30:
+                h_30d = hist_ativo[30]
+                stats_ativo['var_30d'] = ((float(h_atual.fechamento) / float(h_30d.fechamento)) - 1) * 100 if float(h_30d.fechamento) else 0
+            elif hist_ativo.count() > 1:
+                h_30d = hist_ativo.last()
+                stats_ativo['var_30d'] = ((float(h_atual.fechamento) / float(h_30d.fechamento)) - 1) * 100 if float(h_30d.fechamento) else 0
+            else:
+                stats_ativo['var_30d'] = 0
+
     context = {
         'ativo_filtro': ativo_filtro,
         'mes_filtro': mes_filtro,
@@ -338,6 +394,7 @@ def lista_ativos(request):
         'anos_dict': anos_dict,
         'datas_do_mes': datas_do_mes,
         'chain_list': chain_list,
+        'stats_ativo': stats_ativo,
         'is_search': False
     }
     return render(request, 'core/lista_ativos.html', context)
@@ -421,26 +478,6 @@ def upload_precos(request):
             print(f"--- Arquivo carregado: {len(df):,} linhas.")
             print(f"--- Coluna identificada: '{coluna_isin}'")
 
-            # 3. FILTRAGEM EM MEMÓRIA (O segredo da performance)
-            print("[2/4] Filtrando ativos monitorados...")
-            ativos_no_banco = AtivoB3.objects.values_list('codigo_isin', flat=True)
-            set_isins = set(ativos_no_banco)
-            
-            # Garantimos que a coluna ISIN seja string e sem espaços
-            df[coluna_isin] = df[coluna_isin].astype(str).str.strip()
-            
-            df_filtrado = df[df[coluna_isin].isin(set_isins)].copy()
-            total_para_gravar = len(df_filtrado)
-            
-            if total_para_gravar == 0:
-                print("[!] AVISO: Nenhum ativo do banco encontrado no arquivo de 1 milhão de linhas.")
-                messages.warning(request, "O arquivo foi lido, mas nenhum ISIN coincide com seus ativos cadastrados.")
-                return redirect('core:upload_precos')
-
-            # 4. GRAVAÇÃO ATÔMICA
-            print(f"[3/4] Gravando {total_para_gravar} registros no banco...")
-            relatorio = {'novos': 0, 'atualizados': 0, 'sem_alteracao': 0, 'logs': []}
-            
             # Mapeamento robusto de colunas por palavras-chave com normalização de acentos
             def normalize_str(s):
                 if not s: return ""
@@ -462,6 +499,35 @@ def upload_precos(request):
                             return original_c
                 return None
 
+            # 3. FILTRAGEM EM MEMÓRIA (O segredo da performance)
+            print("[2/4] Filtrando ativos monitorados...")
+            # Apenas ativos que estejam relacionados aos Ativos Monitorados ativos
+            ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True)
+            ativos_no_banco = AtivoB3.objects.filter(ativo_objeto__in=ativos_monitorados).values_list('codigo_isin', flat=True)
+            set_isins = set(ativos_no_banco)
+            
+            # Filtro de Segmento
+            col_segmento = find_col(['Segmento', 'Segmento de Mercado', 'SEGMENTO'], df.columns)
+            if col_segmento:
+                segmentos_permitidos = ['CASH', 'EQUITY CALL', 'EQUITY PUT']
+                df[col_segmento] = df[col_segmento].astype(str).str.strip().str.upper()
+                df = df[df[col_segmento].isin(segmentos_permitidos)]
+
+            # Garantimos que a coluna ISIN seja string e sem espaços
+            df[coluna_isin] = df[coluna_isin].astype(str).str.strip()
+            
+            df_filtrado = df[df[coluna_isin].isin(set_isins)].copy()
+            total_para_gravar = len(df_filtrado)
+            
+            if total_para_gravar == 0:
+                print("[!] AVISO: Nenhum ativo do banco encontrado no arquivo de 1 milhão de linhas.")
+                messages.warning(request, "O arquivo foi lido, mas nenhum ISIN coincide com seus ativos cadastrados.")
+                return redirect('core:upload_precos')
+
+            # 4. GRAVAÇÃO ATÔMICA
+            print(f"[3/4] Gravando {total_para_gravar} registros no banco...")
+            relatorio = {'novos': 0, 'atualizados': 0, 'sem_alteracao': 0, 'logs': []}
+
             col_abertura = find_col(['Preço de abertura', 'Abertura', 'ABR', 'PRECO ABR'], df.columns)
             col_maximo = find_col(['Preço máximo', 'Máximo', 'MAXIMO', 'MAX', 'MAX.'], df.columns)
             col_minimo = find_col(['Preço mínimo', 'Mínimo', 'MINIMO', 'MIN', 'MIN.'], df.columns)
@@ -469,6 +535,7 @@ def upload_precos(request):
             col_ajuste = find_col(['Ajuste', 'AJUST.'], df.columns)
             col_qtd_neg = find_col(['Quantidade de negócios', 'Negócios', 'NEGOCIOS', 'NEGOC.'], df.columns)
             col_vol_fin = find_col(['Volume financeiro', 'Volume', 'VOL.', 'VOL FIN'], df.columns)
+            col_qtd_contratos = find_col(['Quantidade de contratos', 'Contratos', 'QTD. CONTRATOS', 'QTD CONTRATOS'], df.columns)
             col_data_neg = find_col(['Data do negócio', 'Data'], df.columns)
 
             print(f"--- Mapeamento:")
@@ -481,7 +548,8 @@ def upload_precos(request):
 
             with transaction.atomic():
                 # Mapa de objetos para evitar milhares de queries
-                mapa_objetos = {a.codigo_isin: a for a in AtivoB3.objects.filter(codigo_isin__in=set_isins)}
+                # Usamos ativos_monitorados (lista de tickers) que é muito menor que set_isins (lista de todos os ISINs de opções)
+                mapa_objetos = {a.codigo_isin: a for a in AtivoB3.objects.filter(ativo_objeto__in=ativos_monitorados)}
 
                 for index, (idx_df, row) in enumerate(df_filtrado.iterrows(), 1):
                     try:
@@ -505,8 +573,9 @@ def upload_precos(request):
                                 'minimo': clean_numeric(row.get(col_minimo)) if col_minimo else 0,
                                 'fechamento': clean_numeric(row.get(col_fechamento)) if col_fechamento else 0,
                                 'ajuste': clean_numeric(row.get(col_ajuste)) if col_ajuste else 0,
-                                'quantidade_negocios': int(clean_numeric(row.get(col_qtd_neg))) if col_qtd_neg else 0,
+                                'quantidade_negocios': clean_int(row.get(col_qtd_neg)) if col_qtd_neg else 0,
                                 'volume_financeiro': clean_numeric(row.get(col_vol_fin)) if col_vol_fin else 0,
+                                'quantidade_contratos': clean_int(row.get(col_qtd_contratos)) if col_qtd_contratos else 0,
                             }
                         )
                         
