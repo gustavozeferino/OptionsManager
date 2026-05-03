@@ -15,4 +15,6 @@ urlpatterns = [
     path('recalcular-estruturas/', views.recalcular_estruturas, name='recalcular_estruturas'),
     path('liquidez-vencimentos/', views.liquidez_vencimentos, name='liquidez_vencimentos'),
     path('ativo/<str:ticker>/', views.detalhe_ativo, name='detalhe_ativo'),
+    path('upload-open-interest/', views.upload_open_interest, name='upload_open_interest'),
+    path('consultar-open-interest/', views.consultar_open_interest, name='consultar_open_interest'),
 ]

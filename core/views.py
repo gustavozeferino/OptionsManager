@@ -897,3 +897,77 @@ def liquidez_vencimentos(request):
     }
     
     return render(request, 'core/liquidez_vencimentos.html', context)
+
+from .models import OpenInterest
+from .services import processar_csv_open_interest
+
+@user_passes_test(apenas_admin)
+def upload_open_interest(request):
+    if request.method == 'POST' and request.FILES.getlist('arquivo_csv'):
+        files = request.FILES.getlist('arquivo_csv')
+        total_novos = 0
+        total_atualizados = 0
+        todos_erros = []
+        
+        start_time = time.time()
+        for file in files:
+            print(f"[*] Processando Open Interest: {file.name}")
+            content = file.read()
+            stats = processar_csv_open_interest(content, file.name)
+            total_novos += stats['novos']
+            total_atualizados += stats['atualizados']
+            if stats['erros']:
+                todos_erros.append(f"Erros em {file.name}: {len(stats['erros'])} problemas (ex: {stats['erros'][0]})")
+                
+            HistoricoImportacao.objects.create(
+                tipo_importacao='Open Interest',
+                arquivo_nome=file.name,
+                novos=stats['novos'],
+                atualizados=stats['atualizados'],
+                sem_alteracao=0,
+                detalhes=stats['erros']
+            )
+
+        end_time = time.time()
+        if todos_erros:
+            for erro in todos_erros:
+                messages.warning(request, erro)
+        
+        messages.success(request, f"Processamento concluído em {end_time - start_time:.2f}s! Novos: {total_novos}, Atualizados: {total_atualizados}.")
+        return redirect('core:upload_open_interest')
+        
+    return render(request, 'core/upload_open_interest.html')
+
+@user_passes_test(apenas_admin)
+def consultar_open_interest(request):
+    ticker_filtro = request.GET.get('ticker', 'BOVA11')
+    data_filtro_str = request.GET.get('data', None)
+    
+    ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).order_by('ticker')
+    
+    datas_disponiveis = OpenInterest.objects.values_list('data_referencia', flat=True).distinct().order_by('-data_referencia')
+    
+    if data_filtro_str:
+        try:
+            data_filtro = datetime.datetime.strptime(data_filtro_str, '%Y-%m-%d').date()
+        except ValueError:
+            data_filtro = datas_disponiveis.first() if datas_disponiveis else None
+    else:
+        data_filtro = datas_disponiveis.first() if datas_disponiveis else None
+
+    dados_oi = []
+    if data_filtro:
+        dados_oi = OpenInterest.objects.filter(
+            ativo_objeto=ticker_filtro, 
+            data_referencia=data_filtro
+        ).select_related('ativo').order_by('ativo__preco_exercicio', 'codigo_expiracao')
+        
+    context = {
+        'ativos_monitorados': ativos_monitorados,
+        'ticker_filtro': ticker_filtro,
+        'datas_disponiveis': datas_disponiveis,
+        'data_filtro': data_filtro,
+        'dados_oi': dados_oi,
+        'empty': not bool(dados_oi),
+    }
+    return render(request, 'core/open_interest.html', context)

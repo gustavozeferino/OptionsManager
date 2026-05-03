@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block title %}Open Interest - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i class="fas fa-chart-pie me-2"></i>Contratos em Aberto (Open Interest)</h1>
+        <p class="text-muted small mb-0">Posições em aberto no mercado de opções</p>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-center">
+            <div class="col-auto">
+                <label class="fw-bold mb-0">Ativo Objeto:</label>
+            </div>
+            <div class="col-auto">
+                <select name="ticker" class="form-select" onchange="this.form.submit()">
+                    {% for am in ativos_monitorados %}
+                    <option value="{{ am.ticker }}" {% if ticker_filtro == am.ticker %}selected{% endif %}>{{ am.ticker }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="fw-bold mb-0 ms-3">Data de Referência:</label>
+            </div>
+            <div class="col-auto">
+                <select name="data" class="form-select" onchange="this.form.submit()">
+                    {% for d in datas_disponiveis %}
+                    <option value="{{ d|date:'Y-m-d' }}" {% if data_filtro|date:'Y-m-d' == d|date:'Y-m-d' %}selected{% endif %}>{{ d|date:'d/m/Y' }}</option>
+                    {% empty %}
+                    <option value="">Sem dados importados</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if empty %}
+<div class="alert alert-info">
+    Nenhum dado de Open Interest encontrado para o ativo <strong>{{ ticker_filtro }}</strong> na data selecionada.
+</div>
+{% else %}
+
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white fw-bold">
+        <i class="fas fa-table me-2"></i>Tabela de Contratos em Aberto - {{ ticker_filtro }} ({{ data_filtro|date:'d/m/Y' }})
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Opção</th>
+                        <th>Tipo</th>
+                        <th class="text-end">Strike</th>
+                        <th class="text-center">Vencimento</th>
+                        <th class="text-end">Coberta</th>
+                        <th class="text-end">Descoberta</th>
+                        <th class="text-end">Bloqueada</th>
+                        <th class="text-end text-primary fw-bold">Total Posições</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for oi in dados_oi %}
+                    <tr>
+                        <td><strong>{{ oi.ticker }}</strong></td>
+                        <td>{{ oi.ativo.tipo_opcao|default:"-" }}</td>
+                        <td class="text-end text-muted small">R$ {{ oi.ativo.preco_exercicio|floatformat:2|default:"0,00" }}</td>
+                        <td class="text-center">{{ oi.ativo.data_expiracao|date:'d/m/Y'|default:"-" }}</td>
+                        <td class="text-end">{{ oi.quantidade_coberta }}</td>
+                        <td class="text-end">{{ oi.quantidade_descoberta }}</td>
+                        <td class="text-end">{{ oi.total_bloqueadas }}</td>
+                        <td class="text-end text-primary fw-bold">{{ oi.total_posicoes }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

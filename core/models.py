@@ -245,3 +245,32 @@ class HistoricoPreco(models.Model):
 
     def __str__(self):
         return f"{self.ativo.ticker} - {self.data_pregao}"
+
+class OpenInterest(models.Model):
+    ativo = models.ForeignKey(AtivoB3, on_delete=models.CASCADE, related_name='open_interests')
+    data_referencia = models.DateField()
+    ticker = models.CharField(max_length=50)
+    ativo_objeto = models.CharField(max_length=50)
+    codigo_expiracao = models.CharField(max_length=20, blank=True, null=True)
+    segmento = models.CharField(max_length=50, blank=True, null=True)
+    contratos_em_aberto = models.IntegerField(default=0)
+    variacao_contratos = models.IntegerField(default=0)
+    id_distribuicao = models.CharField(max_length=20, blank=True, null=True)
+    quantidade_coberta = models.IntegerField(default=0)
+    total_bloqueadas = models.IntegerField(default=0)
+    quantidade_descoberta = models.IntegerField(default=0)
+    total_posicoes = models.IntegerField(default=0)
+    quantidade_tomadores = models.IntegerField(default=0)
+    quantidade_doadores = models.IntegerField(default=0)
+    quantidade_atual = models.IntegerField(default=0)
+    contratos_travados = models.IntegerField(default=0)
+    contratos_transferencia = models.IntegerField(default=0)
+    preco_termo = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        unique_together = ('ativo', 'data_referencia')
+        verbose_name = "Open Interest"
+        verbose_name_plural = "Open Interests"
+
+    def __str__(self):
+        return f"{self.ticker} - {self.data_referencia}"

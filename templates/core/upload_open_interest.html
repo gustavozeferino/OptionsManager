@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-lg border-0">
+                <div class="card-header bg-primary text-white py-3">
+                    <h5 class="mb-0"><i class="fas fa-file-csv"></i> Importar Open Interest</h5>
+                </div>
+                <div class="card-body p-4">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        
+                        <div class="alert alert-info small">
+                            <i class="fas fa-info-circle"></i> 
+                            O sistema lerá a <strong>data de referência</strong> a partir do nome do arquivo (ex: <code>Posições em aberto-01-04-2026.csv</code>). 
+                            Você pode enviar múltiplos arquivos de uma vez.
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Arquivos CSV da B3:</label>
+                            <input type="file" name="arquivo_csv" class="form-control form-control-lg" accept=".csv" multiple required>
+                            <div class="form-text mt-2">Formatos aceitos: Posições em aberto (CSV). Pode selecionar vários.</div>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-cloud-upload-alt"></i> Processar Arquivos
+                            </button>
+                            <a href="{% url 'core:home' %}" class="btn btn-link text-secondary">Voltar ao Painel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.querySelector('form').onsubmit = function() {
+        const btn = document.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.innerHTML = `
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            Processando... Isso pode levar alguns minutos.
+        `;
+    };
+</script>
+
+{% endblock %}

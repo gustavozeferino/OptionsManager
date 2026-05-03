@@ -280,3 +280,158 @@ def _converter_booleano(valor):
     valor_str = str(valor).strip().upper()
     valores_true = ['S', 'SIM', 'TRUE', '1', 'Y', 'YES', 'VERDADEIRO']
     return valor_str in valores_true
+
+import re
+import io
+import unicodedata
+from .models import OpenInterest, AtivoMonitorado
+
+def _normalize_str(s):
+    if not s: return ""
+    return "".join(
+        c for c in unicodedata.normalize('NFD', str(s))
+        if unicodedata.category(c) != 'Mn'
+    ).upper().strip()
+
+def _find_col(keywords, df_cols):
+    normalized_cols = {_normalize_str(c): c for c in df_cols}
+    for k in keywords:
+        norm_k = _normalize_str(k)
+        if norm_k in normalized_cols:
+            return normalized_cols[norm_k]
+        for norm_c, original_c in normalized_cols.items():
+            if norm_k in norm_c:
+                return original_c
+    return None
+
+def _converter_inteiro_csv_oi(valor):
+    if not valor or str(valor).strip() in ('', '-', 'nan'):
+        return None
+    try:
+        valor_str = str(valor).strip().replace('.', '').replace(' ', '')
+        return int(float(valor_str))
+    except (ValueError, TypeError):
+        return None
+
+def processar_csv_open_interest(file_content, filename):
+    stats = {'novos': 0, 'atualizados': 0, 'erros': []}
+    
+    match = re.search(r'(\d{2}-\d{2}-\d{4})', filename)
+    if not match:
+        stats['erros'].append("Não foi possível extrair a data do nome do arquivo (esperado formato dd-mm-YYYY).")
+        return stats
+    
+    data_str = match.group(1)
+    data_referencia = datetime.strptime(data_str, '%d-%m-%Y').date()
+    
+    try:
+        conteudo_decodificado = file_content.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        conteudo_decodificado = file_content.decode('latin1', errors='ignore')
+
+    preview_raw = conteudo_decodificado[:50000].splitlines()
+    linha_cabecalho = None
+    for i, texto_linha in enumerate(preview_raw):
+        # Usamos uma busca insensível a acentos no cabeçalho
+        linha_norm = _normalize_str(texto_linha)
+        if 'ISIN' in linha_norm or 'INSTRUMENTO' in linha_norm:
+            linha_cabecalho = i
+            break
+            
+    if linha_cabecalho is None:
+        stats['erros'].append("Cabeçalho não encontrado no arquivo.")
+        return stats
+
+    try:
+        io_string = io.StringIO(conteudo_decodificado)
+        df = pd.read_csv(io_string, sep=';', skiprows=linha_cabecalho, engine='python', on_bad_lines='skip', dtype=str)
+    except Exception as e:
+        stats['erros'].append(f"Erro ao ler CSV: {e}")
+        return stats
+        
+    coluna_isin = _find_col(['ISIN'], df.columns)
+    if not coluna_isin:
+        stats['erros'].append("Coluna ISIN não identificada no arquivo.")
+        return stats
+
+    ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True)
+    mapa_objetos = {a.codigo_isin: a for a in AtivoB3.objects.filter(ativo_objeto__in=ativos_monitorados)}
+    set_isins = set(mapa_objetos.keys())
+    
+    df[coluna_isin] = df[coluna_isin].astype(str).str.strip()
+    df_filtrado = df[df[coluna_isin].isin(set_isins)].copy()
+    
+    if df_filtrado.empty:
+        stats['erros'].append("Nenhum ativo monitorado encontrado neste arquivo.")
+        return stats
+
+    cols = {
+        'ticker': _find_col(['Instrumento financeiro'], df.columns),
+        'ativo_objeto': _find_col(['Ativo'], df.columns),
+        'codigo_expiracao': _find_col(['Código de expiração', 'Expiração'], df.columns),
+        'segmento': _find_col(['Segmento'], df.columns),
+        'contratos_em_aberto': _find_col(['Contratos em aberto'], df.columns),
+        'variacao_contratos': _find_col(['Variação de contratos em aberto'], df.columns),
+        'id_distribuicao': _find_col(['Identificador da distribuição'], df.columns),
+        'quantidade_coberta': _find_col(['Quantidade coberta'], df.columns),
+        'total_bloqueadas': _find_col(['Total de posições bloqueadas', 'BLOQUEADAS'], df.columns),
+        'quantidade_descoberta': _find_col(['Quantidade descoberta'], df.columns),
+        'total_posicoes': _find_col(['Total de posições'], df.columns),
+        'quantidade_tomadores': _find_col(['Quantidade de tomadores'], df.columns),
+        'quantidade_doadores': _find_col(['Quantidade de doadores'], df.columns),
+        'quantidade_atual': _find_col(['Quantidade atual'], df.columns),
+        'contratos_travados': _find_col(['Contratos travados'], df.columns),
+        'contratos_transferencia': _find_col(['Contratos baixados por transferência'], df.columns),
+        'preco_termo': _find_col(['Preço a termo'], df.columns)
+    }
+
+    with transaction.atomic():
+        for _, row in df_filtrado.iterrows():
+            try:
+                isin = row[coluna_isin]
+                ativo_obj = mapa_objetos.get(isin)
+                
+                ticker_val = row.get(cols['ticker']) if cols['ticker'] else ''
+                if not ticker_val or pd.isna(ticker_val): continue
+                
+                defaults = {
+                    'ticker': str(ticker_val).strip(),
+                    'ativo_objeto': ativo_obj.ativo_objeto if ativo_obj else (str(row.get(cols['ativo_objeto'])).strip() if cols['ativo_objeto'] else ''),
+                    'codigo_expiracao': str(row.get(cols['codigo_expiracao'])).strip() if cols['codigo_expiracao'] else '',
+                    'segmento': str(row.get(cols['segmento'])).strip() if cols['segmento'] else '',
+                    'contratos_em_aberto': _converter_inteiro_csv_oi(row.get(cols['contratos_em_aberto'])),
+                    'variacao_contratos': _converter_inteiro_csv_oi(row.get(cols['variacao_contratos'])),
+                    'id_distribuicao': str(row.get(cols['id_distribuicao'])).strip() if cols['id_distribuicao'] else '',
+                    'quantidade_coberta': _converter_inteiro_csv_oi(row.get(cols['quantidade_coberta'])),
+                    'total_bloqueadas': _converter_inteiro_csv_oi(row.get(cols['total_bloqueadas'])),
+                    'quantidade_descoberta': _converter_inteiro_csv_oi(row.get(cols['quantidade_descoberta'])),
+                    'total_posicoes': _converter_inteiro_csv_oi(row.get(cols['total_posicoes'])),
+                    'quantidade_tomadores': _converter_inteiro_csv_oi(row.get(cols['quantidade_tomadores'])),
+                    'quantidade_doadores': _converter_inteiro_csv_oi(row.get(cols['quantidade_doadores'])),
+                    'quantidade_atual': _converter_inteiro_csv_oi(row.get(cols['quantidade_atual'])),
+                    'contratos_travados': _converter_inteiro_csv_oi(row.get(cols['contratos_travados'])),
+                    'contratos_transferencia': _converter_inteiro_csv_oi(row.get(cols['contratos_transferencia'])),
+                    'preco_termo': _converter_decimal(row.get(cols['preco_termo']))
+                }
+                # Replace None defaults with 0 for integer fields
+                for k, v in defaults.items():
+                    if v is None and k not in ('ticker', 'ativo_objeto', 'codigo_expiracao', 'segmento', 'id_distribuicao', 'preco_termo'):
+                        defaults[k] = 0
+                
+                # Recalcula o total de posições como a soma solicitada
+                defaults['total_posicoes'] = defaults['contratos_em_aberto'] + defaults['quantidade_descoberta'] + defaults['total_bloqueadas']
+                
+                obj, created = OpenInterest.objects.update_or_create(
+                    ativo=ativo_obj,
+                    data_referencia=data_referencia,
+                    defaults=defaults
+                )
+                
+                if created:
+                    stats['novos'] += 1
+                else:
+                    stats['atualizados'] += 1
+            except Exception as e:
+                stats['erros'].append(f"Erro na linha ISIN {isin}: {e}")
+
+    return stats
