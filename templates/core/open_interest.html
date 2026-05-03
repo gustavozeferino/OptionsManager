@@ -14,7 +14,7 @@
     <div class="card-body">
         <form method="get" class="row g-3 align-items-center">
             <div class="col-auto">
-                <label class="fw-bold mb-0">Ativo Objeto:</label>
+                <label class="fw-bold mb-0">Ativo:</label>
             </div>
             <div class="col-auto">
                 <select name="ticker" class="form-select" onchange="this.form.submit()">
@@ -24,14 +24,26 @@
                 </select>
             </div>
             <div class="col-auto">
-                <label class="fw-bold mb-0 ms-3">Data de Referência:</label>
+                <label class="fw-bold mb-0 ms-3">Referência:</label>
             </div>
             <div class="col-auto">
                 <select name="data" class="form-select" onchange="this.form.submit()">
                     {% for d in datas_disponiveis %}
                     <option value="{{ d|date:'Y-m-d' }}" {% if data_filtro|date:'Y-m-d' == d|date:'Y-m-d' %}selected{% endif %}>{{ d|date:'d/m/Y' }}</option>
                     {% empty %}
-                    <option value="">Sem dados importados</option>
+                    <option value="">Sem dados</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="fw-bold mb-0 ms-3">Vencimento:</label>
+            </div>
+            <div class="col-auto">
+                <select name="vencimento" class="form-select" onchange="this.form.submit()">
+                    {% for v in vencimentos_disponiveis %}
+                    <option value="{{ v|date:'Y-m-d' }}" {% if vencimento_filtro|date:'Y-m-d' == v|date:'Y-m-d' %}selected{% endif %}>{{ v|date:'d/m/Y' }}</option>
+                    {% empty %}
+                    <option value="">Sem dados</option>
                     {% endfor %}
                 </select>
             </div>
@@ -41,40 +53,67 @@
 
 {% if empty %}
 <div class="alert alert-info">
-    Nenhum dado de Open Interest encontrado para o ativo <strong>{{ ticker_filtro }}</strong> na data selecionada.
+    Nenhum dado encontrado para os filtros selecionados.
 </div>
 {% else %}
 
 <div class="card shadow-sm">
-    <div class="card-header bg-dark text-white fw-bold">
-        <i class="fas fa-table me-2"></i>Tabela de Contratos em Aberto - {{ ticker_filtro }} ({{ data_filtro|date:'d/m/Y' }})
+    <div class="card-header bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+        <span>
+            <i class="fas fa-table me-2"></i>Contratos em Aberto - {{ ticker_filtro }} ({{ vencimento_filtro|date:'d/m/Y' }})
+        </span>
+        <span class="small opacity-75">Ref: {{ data_filtro|date:'d/m/Y' }}</span>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover table-striped align-middle mb-0">
+            <table class="table table-hover table-bordered align-middle mb-0 text-center">
                 <thead class="table-light">
-                    <tr>
-                        <th>Opção</th>
-                        <th>Tipo</th>
-                        <th class="text-end">Strike</th>
-                        <th class="text-center">Vencimento</th>
-                        <th class="text-end">Coberta</th>
-                        <th class="text-end">Descoberta</th>
-                        <th class="text-end">Bloqueada</th>
-                        <th class="text-end text-primary fw-bold">Total Posições</th>
+                    <tr class="align-middle">
+                        <th colspan="5" class="bg-success bg-opacity-10 text-success">CALL</th>
+                        <th rowspan="2" class="bg-dark text-white">STRIKE</th>
+                        <th colspan="5" class="bg-danger bg-opacity-10 text-danger">PUT</th>
+                    </tr>
+                    <tr class="small text-uppercase">
+                        <th style="width: 100px;">Código</th>
+                        <th>Total</th>
+                        <th>Trava</th>
+                        <th>Descoberta</th>
+                        <th>Coberta</th>
+                        
+                        <th>Coberta</th>
+                        <th>Descoberta</th>
+                        <th>Trava</th>
+                        <th>Total</th>
+                        <th style="width: 100px;">Código</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for oi in dados_oi %}
+                    {% for item in dados_organizados %}
                     <tr>
-                        <td><strong>{{ oi.ticker }}</strong></td>
-                        <td>{{ oi.ativo.tipo_opcao|default:"-" }}</td>
-                        <td class="text-end text-muted small">R$ {{ oi.ativo.preco_exercicio|floatformat:2|default:"0,00" }}</td>
-                        <td class="text-center">{{ oi.ativo.data_expiracao|date:'d/m/Y'|default:"-" }}</td>
-                        <td class="text-end">{{ oi.quantidade_coberta }}</td>
-                        <td class="text-end">{{ oi.quantidade_descoberta }}</td>
-                        <td class="text-end">{{ oi.total_bloqueadas }}</td>
-                        <td class="text-end text-primary fw-bold">{{ oi.total_posicoes }}</td>
+                        <!-- CALL -->
+                        <td class="fw-bold">
+                            {% if item.call %}
+                                <a href="{% url 'core:detalhe_ativo' item.call.ticker %}" class="text-decoration-none">{{ item.call.ticker }}</a>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="bg-light">{% if item.call %}{{ item.call.total_posicoes }}{% else %}0{% endif %}</td>
+                        <td>{% if item.call %}{{ item.call.total_travas }}{% else %}0{% endif %}</td>
+                        <td>{% if item.call %}{{ item.call.quantidade_descoberta }}{% else %}0{% endif %}</td>
+                        <td>{% if item.call %}{{ item.call.quantidade_coberta }}{% else %}0{% endif %}</td>
+
+                        <!-- STRIKE -->
+                        <td class="fw-bold bg-dark text-white">R$ {{ item.strike|floatformat:2 }}</td>
+
+                        <!-- PUT -->
+                        <td>{% if item.put %}{{ item.put.quantidade_coberta }}{% else %}0{% endif %}</td>
+                        <td>{% if item.put %}{{ item.put.quantidade_descoberta }}{% else %}0{% endif %}</td>
+                        <td>{% if item.put %}{{ item.put.total_travas }}{% else %}0{% endif %}</td>
+                        <td class="bg-light">{% if item.put %}{{ item.put.total_posicoes }}{% else %}0{% endif %}</td>
+                        <td class="fw-bold">
+                            {% if item.put %}
+                                <a href="{% url 'core:detalhe_ativo' item.put.ticker %}" class="text-decoration-none">{{ item.put.ticker }}</a>
+                            {% else %}-{% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>

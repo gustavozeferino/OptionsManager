@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+
+{% block title %}Barreiras Open Interest - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i class="fas fa-shield-alt me-2"></i>Barreiras de Posições (Open Interest)</h1>
+        <p class="text-muted small mb-0">Identificação de strikes com grandes concentrações de contratos</p>
+    </div>
+    <div class="text-end">
+        <span class="badge bg-secondary">Última Data: {{ ultima_data|date:'d/m/Y' }}</span>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-center">
+            <div class="col-auto">
+                <label class="fw-bold mb-0">Ativo:</label>
+            </div>
+            <div class="col-auto">
+                <select name="ticker" class="form-select" onchange="this.form.submit()">
+                    {% for am in ativos_monitorados %}
+                    <option value="{{ am.ticker }}" {% if ticker_filtro == am.ticker %}selected{% endif %}>{{ am.ticker }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="fw-bold mb-0 ms-3">Mínimo Total:</label>
+            </div>
+            <div class="col-auto" style="width: 200px;">
+                <input type="number" name="min_posicoes" class="form-control" value="{{ min_posicoes }}" onchange="this.form.submit()">
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-filter me-1"></i>Filtrar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if not dados_barreiras %}
+<div class="alert alert-info">
+    Nenhuma barreira encontrada com mais de {{ min_posicoes }} posições totais para o ativo <strong>{{ ticker_filtro }}</strong>.
+</div>
+{% else %}
+
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white fw-bold">
+        <i class="fas fa-list me-2"></i>Lista de Barreiras Identificadas
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Código</th>
+                        <th>Tipo</th>
+                        <th class="text-end">Strike</th>
+                        <th class="text-center">Vencimento</th>
+                        <th class="text-end">Coberta</th>
+                        <th class="text-end">Descoberta</th>
+                        <th class="text-end">Trava</th>
+                        <th class="text-end text-primary fw-bold">Total Posições</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for oi in dados_barreiras %}
+                    <tr {% if oi.total_posicoes > 10000000 %}class="table-warning"{% endif %}>
+                        <td>
+                            <a href="{% url 'core:detalhe_ativo' oi.ticker %}" class="fw-bold text-decoration-none">
+                                {{ oi.ticker }}
+                            </a>
+                        </td>
+                        <td>
+                            <span class="badge {% if 'CALL' in oi.ativo.tipo_opcao or 'COMPRA' in oi.ativo.tipo_opcao %}bg-success{% else %}bg-danger{% endif %}">
+                                {{ oi.ativo.tipo_opcao }}
+                            </span>
+                        </td>
+                        <td class="text-end fw-bold">R$ {{ oi.ativo.preco_exercicio|floatformat:2 }}</td>
+                        <td class="text-center">{{ oi.ativo.data_expiracao|date:'d/m/Y' }}</td>
+                        <td class="text-end">{{ oi.quantidade_coberta }}</td>
+                        <td class="text-end">{{ oi.quantidade_descoberta }}</td>
+                        <td class="text-end">{{ oi.total_travas }}</td>
+                        <td class="text-end text-primary fw-bold">{{ oi.total_posicoes }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

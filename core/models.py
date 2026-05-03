@@ -257,7 +257,7 @@ class OpenInterest(models.Model):
     variacao_contratos = models.IntegerField(default=0)
     id_distribuicao = models.CharField(max_length=20, blank=True, null=True)
     quantidade_coberta = models.IntegerField(default=0)
-    total_bloqueadas = models.IntegerField(default=0)
+    total_travas = models.IntegerField(default=0)
     quantidade_descoberta = models.IntegerField(default=0)
     total_posicoes = models.IntegerField(default=0)
     quantidade_tomadores = models.IntegerField(default=0)

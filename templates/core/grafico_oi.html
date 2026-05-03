@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Gráfico Open Interest - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i class="fas fa-chart-bar me-2"></i>Gráfico de Posições em Aberto</h1>
+        <p class="text-muted small mb-0">Visualização empilhada de Cobertas, Descobertas e Travas</p>
+    </div>
+    <div class="text-end">
+        <span class="badge bg-secondary">Última Data: {{ ultima_data|date:'d/m/Y' }}</span>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-center">
+            <div class="col-auto">
+                <label class="fw-bold mb-0">Ativo:</label>
+            </div>
+            <div class="col-auto">
+                <select name="ticker" class="form-select" onchange="this.form.submit()">
+                    {% for am in ativos_monitorados %}
+                    <option value="{{ am.ticker }}" {% if ticker_filtro == am.ticker %}selected{% endif %}>{{ am.ticker }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="fw-bold mb-0 ms-3">Vencimento:</label>
+            </div>
+            <div class="col-auto">
+                <select name="vencimento" class="form-select" onchange="this.form.submit()">
+                    {% for v in vencimentos_disponiveis %}
+                    <option value="{{ v|date:'Y-m-d' }}" {% if vencimento_filtro|date:'Y-m-d' == v|date:'Y-m-d' %}selected{% endif %}>{{ v|date:'d/m/Y' }}</option>
+                    {% empty %}
+                    <option value="">Sem dados</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="fw-bold mb-0 ms-3">Tipo:</label>
+            </div>
+            <div class="col-auto">
+                <select name="tipo" class="form-select" onchange="this.form.submit()">
+                    <option value="TODOS" {% if tipo_filtro == 'TODOS' %}selected{% endif %}>Todos</option>
+                    <option value="CALL" {% if tipo_filtro == 'CALL' %}selected{% endif %}>Calls</option>
+                    <option value="PUT" {% if tipo_filtro == 'PUT' %}selected{% endif %}>Puts</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div id="oi-chart" style="width: 100%; height: 600px;"></div>
+    </div>
+</div>
+
+<script src="{% static 'core/js/echarts.min.js' %}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const chartData = {{ chart_data_json|safe }};
+        const chartDom = document.getElementById('oi-chart');
+        const myChart = echarts.init(chartDom);
+        
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'shadow'
+                }
+            },
+            legend: {
+                data: ['Coberta', 'Descoberta', 'Trava'],
+                bottom: 0,
+                left: 'center'
+            },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '10%',
+                containLabel: true
+            },
+            xAxis: [
+                {
+                    type: 'category',
+                    data: chartData.strikes,
+                    name: 'Strike',
+                    axisLabel: {
+                        formatter: 'R$ {value}'
+                    }
+                }
+            ],
+            yAxis: [
+                {
+                    type: 'value',
+                    name: 'Quantidade'
+                }
+            ],
+            series: [
+                {
+                    name: 'Coberta',
+                    type: 'bar',
+                    stack: 'total',
+                    emphasis: {
+                        focus: 'series'
+                    },
+                    data: chartData.coberta,
+                    itemStyle: { color: '#28a745' }
+                },
+                {
+                    name: 'Descoberta',
+                    type: 'bar',
+                    stack: 'total',
+                    emphasis: {
+                        focus: 'series'
+                    },
+                    data: chartData.descoberta,
+                    itemStyle: { color: '#dc3545' }
+                },
+                {
+                    name: 'Trava',
+                    type: 'bar',
+                    stack: 'total',
+                    emphasis: {
+                        focus: 'series'
+                    },
+                    data: chartData.trava,
+                    itemStyle: { color: '#007bff' }
+                }
+            ]
+        };
+
+        myChart.setOption(option);
+        
+        window.addEventListener('resize', function() {
+            myChart.resize();
+        });
+    });
+</script>
+{% endblock %}

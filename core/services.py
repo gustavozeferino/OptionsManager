@@ -374,7 +374,7 @@ def processar_csv_open_interest(file_content, filename):
         'variacao_contratos': _find_col(['Variação de contratos em aberto'], df.columns),
         'id_distribuicao': _find_col(['Identificador da distribuição'], df.columns),
         'quantidade_coberta': _find_col(['Quantidade coberta'], df.columns),
-        'total_bloqueadas': _find_col(['Total de posições bloqueadas', 'BLOQUEADAS'], df.columns),
+        'total_travas': _find_col(['Total de posições bloqueadas', 'BLOQUEADAS'], df.columns),
         'quantidade_descoberta': _find_col(['Quantidade descoberta'], df.columns),
         'total_posicoes': _find_col(['Total de posições'], df.columns),
         'quantidade_tomadores': _find_col(['Quantidade de tomadores'], df.columns),
@@ -403,7 +403,7 @@ def processar_csv_open_interest(file_content, filename):
                     'variacao_contratos': _converter_inteiro_csv_oi(row.get(cols['variacao_contratos'])),
                     'id_distribuicao': str(row.get(cols['id_distribuicao'])).strip() if cols['id_distribuicao'] else '',
                     'quantidade_coberta': _converter_inteiro_csv_oi(row.get(cols['quantidade_coberta'])),
-                    'total_bloqueadas': _converter_inteiro_csv_oi(row.get(cols['total_bloqueadas'])),
+                    'total_travas': _converter_inteiro_csv_oi(row.get(cols['total_travas'])),
                     'quantidade_descoberta': _converter_inteiro_csv_oi(row.get(cols['quantidade_descoberta'])),
                     'total_posicoes': _converter_inteiro_csv_oi(row.get(cols['total_posicoes'])),
                     'quantidade_tomadores': _converter_inteiro_csv_oi(row.get(cols['quantidade_tomadores'])),
@@ -419,7 +419,7 @@ def processar_csv_open_interest(file_content, filename):
                         defaults[k] = 0
                 
                 # Recalcula o total de posições como a soma solicitada
-                defaults['total_posicoes'] = defaults['contratos_em_aberto'] + defaults['quantidade_descoberta'] + defaults['total_bloqueadas']
+                defaults['total_posicoes'] = defaults['contratos_em_aberto'] + defaults['quantidade_descoberta'] + defaults['total_travas']
                 
                 obj, created = OpenInterest.objects.update_or_create(
                     ativo=ativo_obj,

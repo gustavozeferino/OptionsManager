@@ -100,6 +100,33 @@
             </div>
         </div>
     </nav>
+    <!-- Submenu Open Interest (Only on OI pages) -->
+    {% if request.resolver_match.url_name == 'consultar_open_interest' or request.resolver_match.url_name == 'grafico_open_interest' or request.resolver_match.url_name == 'barreiras_open_interest' %}
+    <div class="bg-light border-bottom shadow-sm">
+        <div class="container">
+            <ul class="nav nav-pills py-2 small">
+                <li class="nav-item">
+                    <a class="nav-link {% if request.resolver_match.url_name == 'consultar_open_interest' %}active{% endif %}" 
+                       href="{% url 'core:consultar_open_interest' %}">
+                        <i class="fas fa-table me-1"></i>Contratos em Aberto
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.resolver_match.url_name == 'grafico_open_interest' %}active{% endif %}" 
+                       href="{% url 'core:grafico_open_interest' %}">
+                        <i class="fas fa-chart-bar me-1"></i>Gráfico de Posições
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.resolver_match.url_name == 'barreiras_open_interest' %}active{% endif %}" 
+                       href="{% url 'core:barreiras_open_interest' %}">
+                        <i class="fas fa-shield-alt me-1"></i>Barreiras
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Messages -->
     {% if messages %}

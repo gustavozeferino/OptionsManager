@@ -67,19 +67,21 @@ def lista_logs(request):
 
 
 def clean_numeric(value):
-    """Trata R$, pontos de milhar e vírgulas decimais."""
-    if pd.isna(value) or str(value).strip() in ['', '-']:
+    """Trata R$, pontos de milhar e vírgulas decimais para formato brasileiro ou internacional."""
+    if pd.isna(value) or str(value).strip() in ('', '-', 'nan'):
         return 0.0
-    s = str(value).replace('R$', '').strip()
-    
-    # Se tem vírgula, tratamos como formato BR (1.234,56 ou 1234,56)
-    if ',' in s:
-        s = s.replace('.', '').replace(',', '.')
-    # Se não tem vírgula, mantemos o ponto se ele existir (formato internacional 1234.56)
+    s = str(value).replace('R$', '').replace(' ', '').strip()
     
     try:
+        if ',' in s:
+            s = s.replace('.', '').replace(',', '.')
+        elif '.' in s:
+            if s.count('.') > 1:
+                s = s.replace('.', '')
+            else:
+                s = s.replace('.', '')
         return float(s)
-    except ValueError:
+    except (ValueError, TypeError):
         return 0.0
 
 def clean_int(value):
@@ -942,9 +944,11 @@ def upload_open_interest(request):
 def consultar_open_interest(request):
     ticker_filtro = request.GET.get('ticker', 'BOVA11')
     data_filtro_str = request.GET.get('data', None)
+    vencimento_filtro_str = request.GET.get('vencimento', None)
     
     ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).order_by('ticker')
     
+    # 1. Buscar datas disponíveis
     datas_disponiveis = OpenInterest.objects.values_list('data_referencia', flat=True).distinct().order_by('-data_referencia')
     
     if data_filtro_str:
@@ -955,19 +959,182 @@ def consultar_open_interest(request):
     else:
         data_filtro = datas_disponiveis.first() if datas_disponiveis else None
 
-    dados_oi = []
+    # 2. Buscar vencimentos disponíveis para o ativo
+    vencimentos_disponiveis = []
     if data_filtro:
-        dados_oi = OpenInterest.objects.filter(
-            ativo_objeto=ticker_filtro, 
+        vencimentos_disponiveis = OpenInterest.objects.filter(
+            ativo_objeto=ticker_filtro,
             data_referencia=data_filtro
-        ).select_related('ativo').order_by('ativo__preco_exercicio', 'codigo_expiracao')
+        ).values_list('ativo__data_expiracao', flat=True).distinct().order_by('ativo__data_expiracao')
+
+    # 3. Determinar vencimento padrão (próximo mensal)
+    if not vencimento_filtro_str:
+        hoje = timezone.now().date()
+        # Busca o próximo vencimento mensal no cadastro de ativos
+        vencimento_padrao = AtivoB3.objects.filter(
+            ativo_objeto=ticker_filtro,
+            data_expiracao__gte=hoje,
+            classificacao_vencimento='Mensal'
+        ).order_by('data_expiracao').values_list('data_expiracao', flat=True).first()
+        
+        # Se não achou no cadastro, pega o primeiro disponível do OpenInterest
+        if not vencimento_padrao and vencimentos_disponiveis:
+            vencimento_padrao = vencimentos_disponiveis[0]
+            
+        if vencimento_padrao:
+            vencimento_filtro = vencimento_padrao
+        else:
+            vencimento_filtro = None
+    else:
+        try:
+            vencimento_filtro = datetime.datetime.strptime(vencimento_filtro_str, '%Y-%m-%d').date()
+        except ValueError:
+            vencimento_filtro = vencimentos_disponiveis[0] if vencimentos_disponiveis else None
+
+    # 4. Buscar e organizar dados por strike
+    dados_organizados = []
+    if data_filtro and vencimento_filtro:
+        # Busca todas as posições para o ativo, data e vencimento selecionados
+        posicoes = OpenInterest.objects.filter(
+            ativo_objeto=ticker_filtro,
+            data_referencia=data_filtro,
+            ativo__data_expiracao=vencimento_filtro
+        ).select_related('ativo').order_by('ativo__preco_exercicio')
+        
+        # Agrupar por strike
+        por_strike = defaultdict(lambda: {'call': None, 'put': None})
+        for p in posicoes:
+            strike = p.ativo.preco_exercicio
+            tipo = p.ativo.tipo_opcao.upper()
+            if 'CALL' in tipo or 'COMPRA' in tipo:
+                por_strike[strike]['call'] = p
+            elif 'PUT' in tipo or 'VENDA' in tipo:
+                por_strike[strike]['put'] = p
+        
+        # Transformar em lista ordenada
+        strikes_ordenados = sorted(por_strike.keys())
+        for s in strikes_ordenados:
+            dados_organizados.append({
+                'strike': s,
+                'call': por_strike[s]['call'],
+                'put': por_strike[s]['put']
+            })
         
     context = {
         'ativos_monitorados': ativos_monitorados,
         'ticker_filtro': ticker_filtro,
         'datas_disponiveis': datas_disponiveis,
         'data_filtro': data_filtro,
-        'dados_oi': dados_oi,
-        'empty': not bool(dados_oi),
+        'vencimentos_disponiveis': vencimentos_disponiveis,
+        'vencimento_filtro': vencimento_filtro,
+        'dados_organizados': dados_organizados,
+        'empty': not bool(dados_organizados),
     }
     return render(request, 'core/open_interest.html', context)
+
+@user_passes_test(apenas_admin)
+def grafico_open_interest(request):
+    ticker_filtro = request.GET.get('ticker', 'BOVA11')
+    vencimento_filtro_str = request.GET.get('vencimento', None)
+    tipo_filtro = request.GET.get('tipo', 'TODOS') # CALL, PUT, TODOS
+    
+    ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).order_by('ticker')
+    
+    # Busca a última data de referência global
+    ultima_data = OpenInterest.objects.aggregate(Max('data_referencia'))['data_referencia__max']
+    
+    vencimentos_disponiveis = []
+    if ultima_data:
+        vencimentos_disponiveis = OpenInterest.objects.filter(
+            ativo_objeto=ticker_filtro,
+            data_referencia=ultima_data
+        ).values_list('ativo__data_expiracao', flat=True).distinct().order_by('ativo__data_expiracao')
+
+    if not vencimento_filtro_str and vencimentos_disponiveis:
+        # Padrão: Próximo mensal
+        hoje = timezone.now().date()
+        vencimento_padrao = AtivoB3.objects.filter(
+            ativo_objeto=ticker_filtro,
+            data_expiracao__gte=hoje,
+            classificacao_vencimento='Mensal'
+        ).order_by('data_expiracao').values_list('data_expiracao', flat=True).first()
+        
+        vencimento_filtro = vencimento_padrao if vencimento_padrao else vencimentos_disponiveis[0]
+    elif vencimento_filtro_str:
+        vencimento_filtro = datetime.datetime.strptime(vencimento_filtro_str, '%Y-%m-%d').date()
+    else:
+        vencimento_filtro = None
+
+    chart_data = {'strikes': [], 'coberta': [], 'descoberta': [], 'trava': []}
+    
+    if ultima_data and vencimento_filtro:
+        qs = OpenInterest.objects.filter(
+            ativo_objeto=ticker_filtro,
+            data_referencia=ultima_data,
+            ativo__data_expiracao=vencimento_filtro
+        ).select_related('ativo').order_by('ativo__preco_exercicio')
+        
+        if tipo_filtro == 'CALL':
+            qs = qs.filter(Q(ativo__tipo_opcao__icontains='CALL') | Q(ativo__tipo_opcao__icontains='COMPRA'))
+        elif tipo_filtro == 'PUT':
+            qs = qs.filter(Q(ativo__tipo_opcao__icontains='PUT') | Q(ativo__tipo_opcao__icontains='VENDA'))
+            
+        # Agrupar por strike (caso tenha call e put no mesmo gráfico, somamos ou mostramos lado a lado?)
+        # O usuário pediu "quantidade de posições devem ser exibidas em um gráfico de barras empilhado"
+        # Se for TODOS, vamos somar call e put por strike? Ou separar? 
+        # Geralmente em OI se separa call de put, mas o filtro permite escolher.
+        # Vamos agrupar por strike para o gráfico.
+        data_por_strike = defaultdict(lambda: {'coberta': 0, 'descoberta': 0, 'trava': 0})
+        for p in qs:
+            s = float(p.ativo.preco_exercicio)
+            data_por_strike[s]['coberta'] += p.quantidade_coberta
+            data_por_strike[s]['descoberta'] += p.quantidade_descoberta
+            data_por_strike[s]['trava'] += p.total_travas
+            
+        sorted_strikes = sorted(data_por_strike.keys())
+        for s in sorted_strikes:
+            chart_data['strikes'].append(s)
+            chart_data['coberta'].append(data_por_strike[s]['coberta'])
+            chart_data['descoberta'].append(data_por_strike[s]['descoberta'])
+            chart_data['trava'].append(data_por_strike[s]['trava'])
+
+    context = {
+        'ativos_monitorados': ativos_monitorados,
+        'ticker_filtro': ticker_filtro,
+        'vencimentos_disponiveis': vencimentos_disponiveis,
+        'vencimento_filtro': vencimento_filtro,
+        'tipo_filtro': tipo_filtro,
+        'chart_data_json': json.dumps(chart_data),
+        'ultima_data': ultima_data,
+    }
+    return render(request, 'core/grafico_oi.html', context)
+
+@user_passes_test(apenas_admin)
+def barreiras_open_interest(request):
+    ticker_filtro = request.GET.get('ticker', 'BOVA11')
+    min_posicoes_raw = request.GET.get('min_posicoes', '2000000')
+    try:
+        min_posicoes = int(min_posicoes_raw) if min_posicoes_raw else 2000000
+    except ValueError:
+        min_posicoes = 2000000
+    
+    ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).order_by('ticker')
+    
+    ultima_data = OpenInterest.objects.aggregate(Max('data_referencia'))['data_referencia__max']
+    
+    dados_barreiras = []
+    if ultima_data:
+        dados_barreiras = OpenInterest.objects.filter(
+            ativo_objeto=ticker_filtro,
+            data_referencia=ultima_data,
+            total_posicoes__gte=min_posicoes
+        ).select_related('ativo').order_by('-total_posicoes')
+        
+    context = {
+        'ativos_monitorados': ativos_monitorados,
+        'ticker_filtro': ticker_filtro,
+        'min_posicoes': min_posicoes,
+        'ultima_data': ultima_data,
+        'dados_barreiras': dados_barreiras,
+    }
+    return render(request, 'core/barreiras_oi.html', context)
