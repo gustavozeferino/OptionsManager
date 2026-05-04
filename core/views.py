@@ -894,6 +894,11 @@ def liquidez_vencimentos(request):
             'avg_5d': r['avg_5d'], 
             'avg_21d': r['avg_21d']
         } for r in resumo_vencimentos]),
+        'resumo_json_excluindo_proximos': json.dumps([{
+            'vencimento': r['vencimento_br'], 
+            'avg_5d': r['avg_5d'], 
+            'avg_21d': r['avg_21d']
+        } for r in resumo_vencimentos[2:]]),
         'vencimento_selecionado_default': vencimento_selecionado_default,
         'preco_atm': preco_atm,
     }

@@ -49,12 +49,21 @@
 <div class="row mb-4">
     <!-- Gráfico A: Comparação de Volume por Vencimento -->
     <div class="col-12">
-        <div class="card shadow-sm h-100">
+        <div class="card shadow-sm mb-4">
             <div class="card-header bg-white fw-bold">
                 <i class="fas fa-columns me-2 text-primary"></i>Comparação por Vencimento (Médias)
             </div>
             <div class="card-body">
                 <div id="chartVencimentos" class="chart-container"></div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-white fw-bold">
+                <i class="fas fa-columns me-2 text-primary"></i>Comparação por Vencimento (Médias) - Excluindo os dois próximos vencimentos mensais
+            </div>
+            <div class="card-body">
+                <div id="chartVencimentosExcluindo" class="chart-container"></div>
             </div>
         </div>
     </div>
@@ -167,11 +176,11 @@
         const evolucaoDataAll = {{ evolucao_json_all|safe }};
         const strikeDataAll = {{ strike_json_all|safe }};
         const resumoData = {{ resumo_json|safe }};
+        const resumoDataExcluindo = {{ resumo_json_excluindo_proximos|safe }};
         const precoATM = {{ preco_atm }};
         
         let vencimentoAtual = document.getElementById('selectVencimentoGraficos').value;
 
-        // --- Gráfico A: Comparação de Volume por Vencimento ---
         const chartVenc = echarts.init(document.getElementById('chartVencimentos'), 'vintage');
         chartVenc.setOption({
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -182,6 +191,20 @@
             series: [
                 { name: 'Média 5d', type: 'bar', data: resumoData.map(d => d.avg_5d), color: '#26A69A' },
                 { name: 'Média 21d', type: 'bar', data: resumoData.map(d => d.avg_21d), color: '#9E9E9E' }
+            ]
+        });
+
+        // --- Gráfico A.2: Comparação de Volume Excluindo Próximos ---
+        const chartVencExcluindo = echarts.init(document.getElementById('chartVencimentosExcluindo'), 'vintage');
+        chartVencExcluindo.setOption({
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['Média 5d', 'Média 21d'], bottom: 0 },
+            grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+            xAxis: { type: 'category', data: resumoDataExcluindo.map(d => d.vencimento) },
+            yAxis: { type: 'value', name: 'Volume (R$)' },
+            series: [
+                { name: 'Média 5d', type: 'bar', data: resumoDataExcluindo.map(d => d.avg_5d), color: '#26A69A' },
+                { name: 'Média 21d', type: 'bar', data: resumoDataExcluindo.map(d => d.avg_21d), color: '#9E9E9E' }
             ]
         });
 
@@ -244,6 +267,7 @@
 
         window.addEventListener('resize', () => {
             chartVenc.resize();
+            chartVencExcluindo.resize();
             chartEvol.resize();
             chartStrk.resize();
         });
