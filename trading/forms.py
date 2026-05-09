@@ -1,5 +1,47 @@
 from django import forms
-from .models import Estrutura, Ordem
+from .models import Estrutura, Ordem, Rolagem, RolagemLeg
+
+class RolagemForm(forms.ModelForm):
+    class Meta:
+        model = Rolagem
+        fields = ['nome', 'filtro_liquidez']
+        widgets = {
+            'nome': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ex: Rolagem de Venda Coberta PETR4'}),
+            'filtro_liquidez': forms.NumberInput(attrs={'class': 'form-control'}),
+        }
+
+class RolagemLegForm(forms.ModelForm):
+    ticker = forms.CharField(
+        label="Ativo",
+        widget=forms.TextInput(attrs={
+            'class': 'form-control ticker-input', 
+            'placeholder': 'Ticker', 
+            'autocomplete': 'off'
+        })
+    )
+    class Meta:
+        model = RolagemLeg
+        fields = ['quantidade']
+        widgets = {
+            'quantidade': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Qtd (+ / -)'}),
+        }
+
+    def clean_ticker(self):
+        ticker = self.cleaned_data.get('ticker').strip().upper()
+        from core.models import AtivoB3
+        ativo = AtivoB3.objects.filter(ticker=ticker).first()
+        if not ativo:
+            raise forms.ValidationError(f"Ativo '{ticker}' não encontrado.")
+        return ativo
+
+from django.forms import inlineformset_factory
+RolagemLegFormSet = inlineformset_factory(
+    Rolagem, RolagemLeg, 
+    form=RolagemLegForm, 
+    extra=4, 
+    max_num=4, 
+    can_delete=True
+)
 
 class EstruturaForm(forms.ModelForm):
     class Meta:

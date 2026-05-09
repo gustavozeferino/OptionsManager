@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Rolagem - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-sync-alt me-2"></i> Monitoramento de Rolagens</h2>
+    <div>
+        <a href="{% url 'trading:recalcular_todas_rolagens' %}" class="btn btn-outline-secondary me-2">
+            <i class="fas fa-calculator me-1"></i> Recalcular Tudo
+        </a>
+        <a href="{% url 'trading:criar_rolagem' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i> Nova Rolagem
+        </a>
+    </div>
+</div>
+
+<h4 class="mb-3 text-success"><i class="fas fa-eye me-2"></i> Rolagens Monitoradas</h4>
+<div class="card shadow-sm border-0 mb-5">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Rolagem</th>
+                        <th class="text-center">Filtro Liq.</th>
+                        <th class="text-end">Spread Médio 5d</th>
+                        <th class="text-end">Spread Atual</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rolagem in rolagens_ativas %}
+                    <tr>
+                        <td class="fw-bold">
+                            <a href="{% url 'trading:detalhe_rolagem' rolagem.slug %}" class="text-decoration-none">
+                                {{ rolagem.nome }}
+                            </a>
+                        </td>
+                        <td class="text-center text-muted">
+                            {{ rolagem.filtro_liquidez|intcomma }} contratos
+                        </td>
+                        <td class="text-end fw-bold">
+                            {% if rolagem.spread_medio_5d is not None %}
+                                R$ {{ rolagem.spread_medio_5d|floatformat:2|intcomma }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td class="text-end fw-bold">
+                            {% if rolagem.spread_atual is not None %}
+                                R$ {{ rolagem.spread_atual|floatformat:2|intcomma }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="text-center py-4 text-muted">Nenhuma rolagem ativa sendo monitorada.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<h4 class="mb-3 text-muted"><i class="fas fa-history me-2"></i> Rolagens Arquivadas</h4>
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Identificador</th>
+                        <th class="text-end">Spread Final</th>
+                        <th class="text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rolagem in rolagens_arquivadas %}
+                    <tr class="text-muted">
+                        <td>{{ rolagem.nome }}</td>
+                        <td class="text-end">
+                            {% if rolagem.spread_atual is not None %}
+                                R$ {{ rolagem.spread_atual|floatformat:2|intcomma }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'trading:detalhe_rolagem' rolagem.slug %}" class="btn btn-sm btn-outline-secondary">Ver Histórico</a>
+                            <a href="{% url 'trading:arquivar_rolagem' rolagem.slug %}" class="btn btn-sm btn-outline-success">Reativar</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center py-4 text-muted">Nenhuma rolagem arquivada.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

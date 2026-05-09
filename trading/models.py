@@ -99,3 +99,59 @@ class DailySnapshot(models.Model):
 
     def __str__(self):
         return f"{self.estrutura.nome} em {self.data} - PL: {self.valor_total}"
+
+class Rolagem(models.Model):
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='rolagens')
+    nome = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255, blank=True)
+    
+    STATUS_CHOICES = [
+        ('ATIVA', 'Ativa'),
+        ('ARQUIVADA', 'Arquivada'),
+    ]
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ATIVA')
+    filtro_liquidez = models.IntegerField(default=0, help_text="Mínimo de contratos negociados por leg")
+    
+    # Cache de estatísticas rápidas
+    spread_medio_5d = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    spread_atual = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.nome)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.nome} ({self.usuario.username})"
+        
+    class Meta:
+        verbose_name = "Rolagem"
+        verbose_name_plural = "Rolagens"
+        ordering = ['-criado_em']
+
+class RolagemLeg(models.Model):
+    rolagem = models.ForeignKey(Rolagem, on_delete=models.CASCADE, related_name='legs')
+    ativo = models.ForeignKey(AtivoB3, on_delete=models.PROTECT)
+    quantidade = models.IntegerField(help_text="Positivo para Compra, Negativo para Venda")
+
+    def __str__(self):
+        tipo = "COMPRA" if self.quantidade > 0 else "VENDA"
+        return f"{tipo} {abs(self.quantidade)} {self.ativo.ticker}"
+
+class RolagemSnapshot(models.Model):
+    rolagem = models.ForeignKey(Rolagem, on_delete=models.CASCADE, related_name='snapshots')
+    data = models.DateField()
+    spread_total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    detalhes_legs = models.JSONField(default=dict) # {ticker: {'vwap': float, 'negocios': int}}
+
+    class Meta:
+        verbose_name = "Snapshot de Rolagem"
+        verbose_name_plural = "Snapshots de Rolagens"
+        unique_together = ('rolagem', 'data')
+        ordering = ['-data']
+
+    def __str__(self):
+        return f"{self.rolagem.nome} em {self.data}: {self.spread_total}"

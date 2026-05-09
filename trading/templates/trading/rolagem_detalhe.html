@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load trading_extras %}
+
+{% block title %}Detalhes da Rolagem: {{ rolagem.nome }} - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{% url 'trading:lista_rolagens' %}">Rolagens</a></li>
+            <li class="breadcrumb-item active">{{ rolagem.nome }}</li>
+        </ol>
+    </nav>
+    <div>
+        <a href="{% url 'trading:editar_rolagem' rolagem.slug %}" class="btn btn-outline-primary me-2">
+            <i class="fas fa-edit me-1"></i> Editar
+        </a>
+        <a href="{% url 'trading:arquivar_rolagem' rolagem.slug %}" class="btn btn-outline-warning me-2">
+            <i class="fas fa-archive me-1"></i> {% if rolagem.status == 'ATIVA' %}Arquivar{% else %}Reativar{% endif %}
+        </a>
+        <a href="{% url 'trading:excluir_rolagem' rolagem.slug %}" class="btn btn-outline-danger" onclick="return confirm('Tem certeza que deseja excluir esta rolagem?')">
+            <i class="fas fa-trash me-1"></i> Excluir
+        </a>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body text-center">
+                <h6 class="text-uppercase text-muted small">Spread Médio (5d)</h6>
+                <h3 class="mb-0 text-primary">R$ {{ rolagem.spread_medio_5d|default:"0.00"|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body text-center">
+                <h6 class="text-uppercase text-muted small">Spread Atual</h6>
+                <h3 class="mb-0 {% if rolagem.spread_atual > 0 %}text-success{% elif rolagem.spread_atual < 0 %}text-danger{% endif %}">
+                    R$ {{ rolagem.spread_atual|default:"0.00"|floatformat:2|intcomma }}
+                </h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-5">
+    <div class="card-body">
+        <h5 class="card-title">Evolução do Spread Financeiro</h5>
+        <div id="chart-spread" style="width: 100%; height: 400px;"></div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white py-3">
+        <h5 class="mb-0">Histórico Diário de Spreads</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0 align-middle">
+                <thead class="table-light text-center">
+                    <tr>
+                        <th>Data</th>
+                        {% for leg in legs %}
+                            <th>VWAP {{ leg.ativo.ticker }}</th>
+                            <th>Contratos</th>
+                        {% endfor %}
+                        <th class="fw-bold">Spread Total</th>
+                    </tr>
+                </thead>
+                <tbody class="text-center">
+                    {% for s in snapshots|slice:":30" %}
+                    <tr>
+                        <td class="small">{{ s.data|date:"d/m/Y" }}</td>
+                        {% for leg in legs %}
+                            {% with data_leg=s.detalhes_legs|get_item:leg.ativo.ticker %}
+                            <td>
+                                {% if data_leg.contratos >= rolagem.filtro_liquidez %}
+                                    R$ {{ data_leg.vwap|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted small" title="Abaixo do filtro de liquidez">
+                                        (R$ {{ data_leg.vwap|floatformat:2 }})
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="small {% if data_leg.contratos < rolagem.filtro_liquidez %}text-danger{% endif %}">
+                                {{ data_leg.contratos|intcomma }}
+                            </td>
+                            {% endwith %}
+                        {% endfor %}
+                        <td class="fw-bold {% if s.spread_total > 0 %}text-success{% elif s.spread_total < 0 %}text-danger{% endif %}">
+                            {% if s.spread_total is not None %}
+                                R$ {{ s.spread_total|floatformat:2|intcomma }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{{ legs|length|multiply:2|add:2 }}" class="text-center py-4 text-muted">Nenhum dado histórico disponível.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        var chartDom = document.getElementById('chart-spread');
+        var myChart = echarts.init(chartDom);
+        var option;
+
+        const rawDatas = '{{ datas_chart|escapejs }}';
+        const rawValores = '{{ valores_chart|escapejs }}';
+
+        let datas = [];
+        let valores = [];
+
+        try {
+            datas = JSON.parse(rawDatas);
+            valores = JSON.parse(rawValores);
+        } catch (e) {
+            console.error("Erro ao fazer parse dos dados do gráfico", e);
+        }
+
+        if (datas.length === 0) {
+            chartDom.innerHTML = '<div class="d-flex h-100 justify-content-center align-items-center text-muted">Sem dados suficientes para o gráfico</div>';
+            return;
+        }
+
+        option = {
+            tooltip: {
+                trigger: 'axis',
+                formatter: function (params) {
+                    let val = params[0].value;
+                    let numStr = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+                    return `${params[0].axisValue}<br/>${params[0].marker} Spread: <b>${numStr}</b>`;
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: datas
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: function (value) {
+                        return 'R$ ' + value;
+                    }
+                }
+            },
+            series: [
+                {
+                    name: 'Spread',
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: {
+                        color: '#6f42c1',
+                        width: 3
+                    },
+                    itemStyle: {
+                        color: '#6f42c1'
+                    },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(111, 66, 193, 0.5)' },
+                            { offset: 1, color: 'rgba(111, 66, 193, 0.1)' }
+                        ])
+                    },
+                    data: valores
+                }
+            ]
+        };
+
+        option && myChart.setOption(option);
+
+        window.addEventListener('resize', function () {
+            myChart.resize();
+        });
+    });
+</script>
+{% endblock %}

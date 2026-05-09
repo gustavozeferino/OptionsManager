@@ -3,10 +3,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Sum
 from django.utils import timezone
-from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot
-from .forms import EstruturaForm
+from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot, Rolagem, RolagemLeg, RolagemSnapshot
+from .forms import EstruturaForm, RolagemForm, RolagemLegFormSet
 import json
-from .services import importar_ordens_profit
+from .services import importar_ordens_profit, recalcular_rolagem, recalcular_todas_rolagens
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -593,3 +593,129 @@ def relatorio_performance(request):
     }
     
     return render(request, 'trading/relatorios.html', context)
+
+
+@login_required
+def lista_rolagens(request):
+    """Exibe a lista de rolagens ativas e arquivadas do usuário."""
+    rolagens_ativas = Rolagem.objects.filter(usuario=request.user, status='ATIVA')
+    rolagens_arquivadas = Rolagem.objects.filter(usuario=request.user, status='ARQUIVADA')
+    return render(request, 'trading/rolagem_lista.html', {
+        'rolagens_ativas': rolagens_ativas,
+        'rolagens_arquivadas': rolagens_arquivadas,
+    })
+
+@login_required
+def criar_rolagem(request):
+    """Cria uma nova simulação de rolagem."""
+    if request.method == 'POST':
+        form = RolagemForm(request.POST)
+        formset = RolagemLegFormSet(request.POST)
+        if form.is_valid() and formset.is_valid():
+            rolagem = form.save(commit=False)
+            rolagem.usuario = request.user
+            rolagem.save()
+            
+            for f in formset.forms:
+                if f.cleaned_data and not f.cleaned_data.get('DELETE'):
+                    leg = f.save(commit=False)
+                    leg.rolagem = rolagem
+                    leg.ativo = f.cleaned_data.get('ticker')
+                    leg.save()
+            
+            recalcular_rolagem(rolagem)
+            messages.success(request, f"Rolagem '{rolagem.nome}' criada com sucesso!")
+            return redirect('trading:lista_rolagens')
+    else:
+        form = RolagemForm()
+        formset = RolagemLegFormSet()
+    
+    return render(request, 'trading/rolagem_form.html', {
+        'form': form, 
+        'formset': formset, 
+        'titulo': 'Nova Rolagem'
+    })
+
+@login_required
+def detalhe_rolagem(request, slug):
+    """Exibe os detalhes e o histórico de uma rolagem."""
+    rolagem = get_object_or_404(Rolagem, usuario=request.user, slug=slug)
+    snapshots = rolagem.snapshots.all().order_by('data')
+    
+    # Filtramos apenas os dias com spread válido para o gráfico
+    valid_snapshots = [s for s in snapshots if s.spread_total is not None]
+    datas_chart = [s.data.strftime('%d/%m/%Y') for s in valid_snapshots]
+    valores_chart = [float(s.spread_total) for s in valid_snapshots]
+    
+    # Legs para a tabela de detalhes
+    legs = rolagem.legs.select_related('ativo').all()
+    
+    return render(request, 'trading/rolagem_detalhe.html', {
+        'rolagem': rolagem,
+        'snapshots': snapshots.order_by('-data'), # Tabela em ordem decrescente
+        'legs': legs,
+        'datas_chart': json.dumps(datas_chart),
+        'valores_chart': json.dumps(valores_chart),
+    })
+
+@login_required
+def editar_rolagem(request, slug):
+    """Edita uma rolagem existente e dispara o recálculo."""
+    rolagem = get_object_or_404(Rolagem, usuario=request.user, slug=slug)
+    if request.method == 'POST':
+        form = RolagemForm(request.POST, instance=rolagem)
+        formset = RolagemLegFormSet(request.POST, instance=rolagem)
+        if form.is_valid() and formset.is_valid():
+            form.save()
+            
+            # Remove legs deletadas e atualiza/cria as outras
+            formset.save(commit=False)
+            for obj in formset.deleted_objects:
+                obj.delete()
+            
+            for f in formset.forms:
+                if f.cleaned_data and not f.cleaned_data.get('DELETE'):
+                    leg = f.save(commit=False)
+                    leg.rolagem = rolagem
+                    leg.ativo = f.cleaned_data.get('ticker')
+                    leg.save()
+            
+            recalcular_rolagem(rolagem)
+            messages.success(request, "Rolagem atualizada e histórico recalculado.")
+            return redirect('trading:detalhe_rolagem', slug=rolagem.slug)
+    else:
+        form = RolagemForm(instance=rolagem)
+        formset = RolagemLegFormSet(instance=rolagem)
+        # Pre-fill ticker
+        for i, leg in enumerate(rolagem.legs.all()):
+             if i < len(formset.forms):
+                 formset.forms[i].fields['ticker'].initial = leg.ativo.ticker
+
+    return render(request, 'trading/rolagem_form.html', {
+        'form': form, 
+        'formset': formset, 
+        'titulo': 'Editar Rolagem'
+    })
+
+@login_required
+def arquivar_rolagem(request, slug):
+    rolagem = get_object_or_404(Rolagem, usuario=request.user, slug=slug)
+    rolagem.status = 'ARQUIVADA' if rolagem.status == 'ATIVA' else 'ATIVA'
+    rolagem.save()
+    status_str = "arquivada" if rolagem.status == 'ARQUIVADA' else "reativada"
+    messages.success(request, f"Rolagem {status_str} com sucesso.")
+    return redirect('trading:lista_rolagens')
+
+@login_required
+def excluir_rolagem(request, slug):
+    rolagem = get_object_or_404(Rolagem, usuario=request.user, slug=slug)
+    rolagem.delete()
+    messages.success(request, "Rolagem excluída permanentemente.")
+    return redirect('trading:lista_rolagens')
+
+@login_required
+def recalcular_todas_rolagens_view(request):
+    """Trigger manual de recálculo de todas as rolagens do usuário."""
+    count = recalcular_todas_rolagens()
+    messages.success(request, f"{count} rolagens recalculadas com sucesso.")
+    return redirect('trading:lista_rolagens')

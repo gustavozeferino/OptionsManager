@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-primary text-white py-3">
+                <h5 class="mb-0"><i class="fas fa-edit me-2"></i> {{ titulo }}</h5>
+            </div>
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">Nome / Identificador</label>
+                            {{ form.nome }}
+                            {% if form.nome.errors %}
+                                <div class="text-danger small">{{ form.nome.errors }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Filtro de Liquidez (Contratos)</label>
+                            {{ form.filtro_liquidez }}
+                            {% if form.filtro_liquidez.errors %}
+                                <div class="text-danger small">{{ form.filtro_liquidez.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+                    <h6 class="mb-3"><i class="fas fa-layer-group me-2"></i> Legs da Rolagem (Máx 4)</h6>
+                    
+                    {{ formset.management_form }}
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 50%;">Opção (Ticker)</th>
+                                    <th style="width: 30%;">Quantidade (+ Compra / - Venda)</th>
+                                    <th style="width: 20%;" class="text-center">Remover</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for leg_form in formset %}
+                                <tr class="leg-form-row">
+                                    <td>
+                                        {{ leg_form.id }}
+                                        {{ leg_form.ticker }}
+                                        {% if leg_form.ticker.errors %}
+                                            <div class="text-danger small">{{ leg_form.ticker.errors }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {{ leg_form.quantidade }}
+                                        {% if leg_form.quantidade.errors %}
+                                            <div class="text-danger small">{{ leg_form.quantidade.errors }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if formset.can_delete %}
+                                            {{ leg_form.DELETE }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="d-flex justify-content-between mt-4">
+                        <a href="{% url 'trading:lista_rolagens' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-primary px-4">
+                            <i class="fas fa-save me-1"></i> Salvar Rolagem
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="alert alert-info mt-4">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Dica:</strong> Para rolagens (spreads), utilize quantidades negativas para as pernas vendidas e positivas para as compradas. O sistema calculará o spread financeiro total automaticamente.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Aqui poderíamos adicionar lógica para auto-completar tickers se necessário, 
+    // mas por enquanto vamos manter o campo de texto simples que valida no backend.
+</script>
+{% endblock %}

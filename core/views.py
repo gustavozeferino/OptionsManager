@@ -614,6 +614,13 @@ def upload_precos(request):
                     if i % 10 == 0 or i == total_est:
                         print(f"    > Estruturas processadas: {i}/{total_est}")
 
+                # 6. RECALCULAR ROLAGENS AFETADAS
+                from trading.models import Rolagem
+                from trading.services import recalcular_rolagem
+                rolagens_afetadas = Rolagem.objects.filter(legs__ativo_id__in=ativos_afetados).distinct()
+                for r in rolagens_afetadas:
+                    recalcular_rolagem(r)
+
             # Salva histórico final
             historico = HistoricoImportacao.objects.create(
                 tipo_importacao='Negócios Consolidados',
@@ -732,6 +739,14 @@ def recalcular_estruturas(request):
         recalcular_estrutura(est)
         
     messages.success(request, f"Sucesso! {total} estruturas foram recalculadas.")
+    return redirect('core:home')
+
+@user_passes_test(apenas_admin)
+def recalcular_rolagens(request):
+    """Recalcula todas as rolagens de todos os usuários."""
+    from trading.services import recalcular_todas_rolagens
+    count = recalcular_todas_rolagens()
+    messages.success(request, f"Sucesso! {count} rolagens foram recalculadas.")
     return redirect('core:home')
 
 @user_passes_test(apenas_admin)

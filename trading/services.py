@@ -1,6 +1,6 @@
 from django.db import transaction
 from django.db.models import Sum
-from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot
+from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot, Rolagem, RolagemLeg, RolagemSnapshot
 from core.models import HistoricoPreco, AtivoB3
 from datetime import date, datetime
 from decimal import Decimal
@@ -431,3 +431,99 @@ def importar_ordens_profit(user, csv_file):
             recalcular_estrutura(est)
             
     return len(ordens_para_criar), erros
+
+def recalcular_rolagem(rolagem):
+    """
+    Calcula o histórico de spreads da rolagem baseando-se no VWAP diário das legs.
+    """
+    from collections import defaultdict
+    from decimal import Decimal
+    from django.db import transaction
+    from .models import RolagemSnapshot, RolagemLeg
+    from core.models import HistoricoPreco
+
+    legs = list(rolagem.legs.all().select_related('ativo'))
+    if not legs:
+        RolagemSnapshot.objects.filter(rolagem=rolagem).delete()
+        rolagem.spread_atual = None
+        rolagem.melhor_spread_historico = None
+        rolagem.variacao_5d = None
+        rolagem.save()
+        return
+
+    ativos_ids = [leg.ativo_id for leg in legs]
+    historicos = HistoricoPreco.objects.filter(ativo_id__in=ativos_ids).order_by('data_pregao')
+    
+    dados_por_dia = defaultdict(dict)
+    contratos_por_dia = defaultdict(dict)
+    
+    for h in historicos:
+        vwap = Decimal('0')
+        if h.quantidade_contratos > 0:
+            vwap = h.volume_financeiro / h.quantidade_contratos
+        
+        dados_por_dia[h.data_pregao][h.ativo_id] = vwap
+        contratos_por_dia[h.data_pregao][h.ativo_id] = h.quantidade_contratos
+
+    datas_disponiveis = sorted(dados_por_dia.keys())
+    snapshots_to_create = []
+    
+    for data in datas_disponiveis:
+        valido_spread = True
+        detalhes = {}
+        spread_total_dia = Decimal('0')
+        
+        for leg in legs:
+            contratos = contratos_por_dia[data].get(leg.ativo_id, 0)
+            vwap = dados_por_dia[data].get(leg.ativo_id)
+            
+            # Detalhes armazena vwap e contratos (contratos não sofre influência do filtro)
+            detalhes[leg.ativo.ticker] = {
+                'vwap': float(vwap) if vwap else 0.0,
+                'contratos': contratos
+            }
+            
+            # Validação para o spread (VWAP e contratos mínimos)
+            if contratos < rolagem.filtro_liquidez or vwap is None:
+                valido_spread = False
+                
+            if vwap:
+                spread_total_dia += vwap * leg.quantidade
+            
+        if not valido_spread:
+            spread_total_dia = None
+            
+        snapshots_to_create.append(RolagemSnapshot(
+            rolagem=rolagem,
+            data=data,
+            spread_total=spread_total_dia,
+            detalhes_legs=detalhes
+        ))
+
+    with transaction.atomic():
+        RolagemSnapshot.objects.filter(rolagem=rolagem).delete()
+        RolagemSnapshot.objects.bulk_create(snapshots_to_create)
+
+    # Atualiza Cache apenas com dias válidos
+    snapshots_validos = [s for s in snapshots_to_create if s.spread_total is not None]
+    
+    if snapshots_validos:
+        rolagem.spread_atual = snapshots_validos[-1].spread_total
+        
+        # Média dos últimos 5 dias válidos
+        ultimos_5 = snapshots_validos[-5:]
+        rolagem.spread_medio_5d = sum(s.spread_total for s in ultimos_5) / len(ultimos_5)
+        
+        rolagem.save(update_fields=['spread_atual', 'spread_medio_5d'])
+    else:
+        rolagem.spread_atual = None
+        rolagem.spread_medio_5d = None
+        rolagem.save(update_fields=['spread_atual', 'spread_medio_5d'])
+
+def recalcular_todas_rolagens():
+    """Recalcula os caches de spread para todas as rolagens cadastradas."""
+    from .models import Rolagem
+    rolagens = Rolagem.objects.all()
+    for rolagem in rolagens:
+        recalcular_rolagem(rolagem)
+    return rolagens.count()

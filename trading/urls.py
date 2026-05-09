@@ -26,4 +26,13 @@ urlpatterns = [
 
     # Relatórios
     path('relatorios/', views.relatorio_performance, name='relatorio_performance'),
+
+    # Rolagem
+    path('rolagem/', views.lista_rolagens, name='lista_rolagens'),
+    path('rolagem/nova/', views.criar_rolagem, name='criar_rolagem'),
+    path('rolagem/recalcular-todas/', views.recalcular_todas_rolagens_view, name='recalcular_todas_rolagens'),
+    path('rolagem/<slug:slug>/', views.detalhe_rolagem, name='detalhe_rolagem'),
+    path('rolagem/<slug:slug>/editar/', views.editar_rolagem, name='editar_rolagem'),
+    path('rolagem/<slug:slug>/arquivar/', views.arquivar_rolagem, name='arquivar_rolagem'),
+    path('rolagem/<slug:slug>/excluir/', views.excluir_rolagem, name='excluir_rolagem'),
 ]
