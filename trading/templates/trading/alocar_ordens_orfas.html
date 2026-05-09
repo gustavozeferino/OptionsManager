@@ -5,65 +5,175 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="fas fa-exchange-alt me-2"></i> Alocar Ordens da "Sem Estrutura"</h2>
+    <div>
+        <h2 class="mb-1"><i class="fas fa-exchange-alt me-2 text-primary"></i> Alocar Ordens Órfãs</h2>
+        <p class="text-muted mb-0">Selecione as ordens que deseja mover para uma estrutura ativa.</p>
+    </div>
     <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-outline-secondary">
         <i class="fas fa-arrow-left me-1"></i> Voltar
     </a>
 </div>
 
-<div class="card shadow-sm border-0">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Data</th>
-                        <th>Ativo</th>
-                        <th>Operação</th>
-                        <th class="text-end">Quantidade</th>
-                        <th class="text-end">Preço</th>
-                        <th>Alocar Para...</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for ordem in ordens_orfas %}
-                    <tr>
-                        <td>{{ ordem.data|date:"d/m/Y" }}</td>
-                        <td class="fw-bold">{{ ordem.ativo.ticker }}</td>
-                        <td>
-                            {% if ordem.quantidade > 0 %}
-                            <span class="badge bg-success-subtle text-success">COMPRA</span>
-                            {% else %}
-                            <span class="badge bg-danger-subtle text-danger">VENDA</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-end">{{ ordem.qtd_abs }}</td>
-                        <td class="text-end">R$ {{ ordem.preco|floatformat:2|intcomma }}</td>
-                        <td style="width: 30%;">
-                            <form method="post" class="d-flex align-items-center">
-                                {% csrf_token %}
-                                <input type="hidden" name="ordem_id" value="{{ ordem.id }}">
-                                <select name="estrutura_id" class="form-select form-select-sm me-2" required>
-                                    <option value="" selected disabled>Selecione uma estrutura...</option>
-                                    {% for est in estruturas_ativas %}
-                                    <option value="{{ est.id }}">{{ est.nome }}</option>
-                                    {% endfor %}
-                                </select>
-                                <button type="submit" class="btn btn-sm btn-primary">Mover</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="6" class="text-center text-muted py-5">
-                            <i class="fas fa-check-circle text-success fs-1 mb-3 d-block"></i>
-                            Tudo limpo! Não há ordens esperando alocação na "Sem Estrutura".
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+<form method="post" id="alocacao-form">
+    {% csrf_token %}
+    
+    <!-- Barra de Ações Superior -->
+    <div class="card shadow-sm border-0 mb-4 bg-light">
+        <div class="card-body py-3">
+            <div class="row align-items-center g-3">
+                <div class="col-md-auto">
+                    <div class="d-flex align-items-center">
+                        <span class="text-secondary me-3"><strong id="selected-count">0</strong> selecionadas</span>
+                        <div class="vr mx-3 d-none d-md-block"></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <select name="estrutura_id" id="target-estrutura" class="form-select border-primary-subtle" required>
+                        <option value="" selected disabled>Escolha a estrutura de destino...</option>
+                        {% for est in estruturas_ativas %}
+                        <option value="{{ est.id }}">{{ est.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-auto">
+                    <button type="submit" id="btn-alocar" class="btn btn-primary px-4" disabled>
+                        <i class="fas fa-save me-2"></i> Alocar Ordens
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
-</div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 40px;" class="ps-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="select-all">
+                                </div>
+                            </th>
+                            <th>Data</th>
+                            <th>Ativo</th>
+                            <th>Operação</th>
+                            <th class="text-end">Quantidade</th>
+                            <th class="text-end pe-4">Preço</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ordem in ordens_orfas %}
+                        <tr>
+                            <td class="ps-4">
+                                <div class="form-check">
+                                    <input class="form-check-input order-checkbox" type="checkbox" name="ordem_ids" value="{{ ordem.id }}">
+                                </div>
+                            </td>
+                            <td class="text-nowrap">{{ ordem.data|date:"d/m/Y" }}</td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-primary-subtle text-primary rounded-circle p-2 me-2 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+                                        <i class="fas fa-file-invoice-dollar small"></i>
+                                    </div>
+                                    <span class="fw-bold">{{ ordem.ativo.ticker }}</span>
+                                </div>
+                            </td>
+                            <td>
+                                {% if ordem.quantidade > 0 %}
+                                <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3">
+                                    <i class="fas fa-arrow-up small me-1"></i> COMPRA
+                                </span>
+                                {% else %}
+                                <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-3">
+                                    <i class="fas fa-arrow-down small me-1"></i> VENDA
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end fw-medium">{{ ordem.qtd_abs|intcomma }}</td>
+                            <td class="text-end pe-4">
+                                <span class="text-secondary small">R$</span> {{ ordem.preco|floatformat:2|intcomma }}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-5">
+                                <div class="mb-3">
+                                    <i class="fas fa-check-circle text-success" style="font-size: 3rem; opacity: 0.5;"></i>
+                                </div>
+                                <h5 class="fw-normal">Tudo limpo!</h5>
+                                <p class="mb-0">Não há ordens esperando alocação na "Sem Estrutura".</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAll = document.getElementById('select-all');
+    const checkboxes = document.querySelectorAll('.order-checkbox');
+    const selectedCountDisplay = document.getElementById('selected-count');
+    const btnAlocar = document.getElementById('btn-alocar');
+    const targetEstrutura = document.getElementById('target-estrutura');
+
+    function updateUI() {
+        const count = document.querySelectorAll('.order-checkbox:checked').length;
+        selectedCountDisplay.textContent = count;
+        
+        // Só habilita o botão se houver itens selecionados E uma estrutura escolhida
+        btnAlocar.disabled = count === 0 || !targetEstrutura.value;
+        
+        // Estilo visual para a linha selecionada
+        checkboxes.forEach(cb => {
+            const row = cb.closest('tr');
+            if (cb.checked) {
+                row.classList.add('table-primary');
+            } else {
+                row.classList.remove('table-primary');
+            }
+        });
+    }
+
+    selectAll.addEventListener('change', function() {
+        checkboxes.forEach(cb => {
+            cb.checked = selectAll.checked;
+        });
+        updateUI();
+    });
+
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateUI);
+    });
+
+    targetEstrutura.addEventListener('change', updateUI);
+
+    // Impedir envio se não houver seleção (segurança extra)
+    document.getElementById('alocacao-form').addEventListener('submit', function(e) {
+        const count = document.querySelectorAll('.order-checkbox:checked').length;
+        if (count === 0) {
+            e.preventDefault();
+            alert('Por favor, selecione ao menos uma ordem.');
+        }
+    });
+});
+</script>
+<style>
+    .table-hover tbody tr:hover {
+        background-color: rgba(var(--bs-primary-rgb), 0.05);
+    }
+    .table-primary {
+        --bs-table-bg: rgba(var(--bs-primary-rgb), 0.1) !important;
+    }
+    .badge {
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+</style>
+{% endblock %}
 {% endblock %}

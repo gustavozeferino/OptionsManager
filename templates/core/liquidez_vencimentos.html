@@ -11,6 +11,31 @@
     }
     .ratio-up { color: #26A69A; font-weight: bold; }
     .ratio-down { color: #EF5350; font-weight: bold; }
+
+    /* Filter Styling */
+    .dropdown-menu-filter {
+        min-width: 250px;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        border: none;
+    }
+    .venc-list-container {
+        max-height: 250px;
+        overflow-y: auto;
+        padding-right: 5px;
+    }
+    .venc-list-container::-webkit-scrollbar {
+        width: 5px;
+    }
+    .venc-list-container::-webkit-scrollbar-thumb {
+        background: #dee2e6;
+        border-radius: 10px;
+    }
+    .form-check-input:checked {
+        background-color: #26A69A;
+        border-color: #26A69A;
+    }
 </style>
 {% endblock %}
 
@@ -54,16 +79,36 @@
                 <i class="fas fa-columns me-2 text-primary"></i>Comparação por Vencimento (Médias)
             </div>
             <div class="card-body">
-                <div id="chartVencimentos" class="chart-container"></div>
-            </div>
-        </div>
+                <!-- Filtro de Vencimentos (Dropdown Multi-select) -->
+                <div class="mb-4">
+                    <div class="dropdown">
+                        <button class="btn btn-outline-primary dropdown-toggle fw-bold" type="button" id="dropdownVencimentos" data-bs-toggle="dropdown" aria-expanded="false" data-bs-auto-close="outside">
+                            <i class="fas fa-calendar-alt me-2"></i>Filtrar Vencimentos
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-filter" aria-labelledby="dropdownVencimentos">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="small fw-bold text-muted text-uppercase">Vencimentos</span>
+                                <div>
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none me-2" id="btnAllVenc">Todos</button>
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted" id="btnUnselectAllVenc">Nenhum</button>
+                                </div>
+                            </div>
+                            <hr class="my-2">
+                            <div class="venc-list-container">
+                                {% for r in resumo_vencimentos %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input venc-checkbox" type="checkbox" value="{{ r.vencimento_br }}" id="venc_{{ forloop.index }}" checked>
+                                    <label class="form-check-label small" for="venc_{{ forloop.index }}">
+                                        {{ r.vencimento_br }}
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-        <div class="card shadow-sm">
-            <div class="card-header bg-white fw-bold">
-                <i class="fas fa-columns me-2 text-primary"></i>Comparação por Vencimento (Médias) - Excluindo os dois próximos vencimentos mensais
-            </div>
-            <div class="card-body">
-                <div id="chartVencimentosExcluindo" class="chart-container"></div>
+                <div id="chartVencimentos" class="chart-container"></div>
             </div>
         </div>
     </div>
@@ -176,12 +221,26 @@
         const evolucaoDataAll = {{ evolucao_json_all|safe }};
         const strikeDataAll = {{ strike_json_all|safe }};
         const resumoData = {{ resumo_json|safe }};
-        const resumoDataExcluindo = {{ resumo_json_excluindo_proximos|safe }};
         const precoATM = {{ preco_atm }};
         
         let vencimentoAtual = document.getElementById('selectVencimentoGraficos').value;
 
         const chartVenc = echarts.init(document.getElementById('chartVencimentos'), 'vintage');
+
+        function updateMainCharts() {
+            const selectedVencs = Array.from(document.querySelectorAll('.venc-checkbox:checked')).map(cb => cb.value);
+            
+            const filteredResumo = resumoData.filter(d => selectedVencs.includes(d.vencimento));
+
+            chartVenc.setOption({
+                xAxis: { data: filteredResumo.map(d => d.vencimento) },
+                series: [
+                    { data: filteredResumo.map(d => d.avg_5d) },
+                    { data: filteredResumo.map(d => d.avg_21d) }
+                ]
+            }, { notMerge: false });
+        }
+
         chartVenc.setOption({
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
             legend: { data: ['Média 5d', 'Média 21d'], bottom: 0 },
@@ -194,18 +253,19 @@
             ]
         });
 
-        // --- Gráfico A.2: Comparação de Volume Excluindo Próximos ---
-        const chartVencExcluindo = echarts.init(document.getElementById('chartVencimentosExcluindo'), 'vintage');
-        chartVencExcluindo.setOption({
-            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-            legend: { data: ['Média 5d', 'Média 21d'], bottom: 0 },
-            grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-            xAxis: { type: 'category', data: resumoDataExcluindo.map(d => d.vencimento) },
-            yAxis: { type: 'value', name: 'Volume (R$)' },
-            series: [
-                { name: 'Média 5d', type: 'bar', data: resumoDataExcluindo.map(d => d.avg_5d), color: '#26A69A' },
-                { name: 'Média 21d', type: 'bar', data: resumoDataExcluindo.map(d => d.avg_21d), color: '#9E9E9E' }
-            ]
+        // Event Listeners for Filters
+        document.querySelectorAll('.venc-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateMainCharts);
+        });
+
+        document.getElementById('btnAllVenc').addEventListener('click', () => {
+            document.querySelectorAll('.venc-checkbox').forEach(cb => cb.checked = true);
+            updateMainCharts();
+        });
+
+        document.getElementById('btnUnselectAllVenc').addEventListener('click', () => {
+            document.querySelectorAll('.venc-checkbox').forEach(cb => cb.checked = false);
+            updateMainCharts();
         });
 
         const chartEvol = echarts.init(document.getElementById('chartEvolucao'), 'vintage');
@@ -267,7 +327,6 @@
 
         window.addEventListener('resize', () => {
             chartVenc.resize();
-            chartVencExcluindo.resize();
             chartEvol.resize();
             chartStrk.resize();
         });

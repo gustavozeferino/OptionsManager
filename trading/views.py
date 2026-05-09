@@ -306,26 +306,45 @@ def upload_ordens(request):
 def alocar_ordens_orfas(request):
     """
     Interface para mover ordens da estrutura 'Sem Estrutura' para outras estruturas.
+    Suporta alocação em lote.
     """
     estrutura_padrao = get_object_or_404(Estrutura, usuario=request.user, slug='sem-estrutura')
     
     if request.method == 'POST':
-        ordem_id = request.POST.get('ordem_id')
+        ordem_ids = request.POST.getlist('ordem_ids')
         nova_estrutura_id = request.POST.get('estrutura_id')
         
-        if ordem_id and nova_estrutura_id:
-            ordem = get_object_or_404(Ordem, id=ordem_id, estrutura=estrutura_padrao)
+        if ordem_ids and nova_estrutura_id:
             nova_est = get_object_or_404(Estrutura, id=nova_estrutura_id, usuario=request.user)
             
-            ordem.estrutura = nova_est
-            ordem.save()
+            # Filtra as ordens que realmente pertencem à estrutura padrão e ao usuário
+            ordens = Ordem.objects.filter(id__in=ordem_ids, estrutura=estrutura_padrao)
             
-            # Recalcula ambas as estruturas envolvidas
-            from .services import recalcular_estrutura
-            recalcular_estrutura(estrutura_padrao)
-            recalcular_estrutura(nova_est)
+            # Identifica ativos afetados para recalcular posições consolidadas
+            ativos_ids = list(ordens.values_list('ativo_id', flat=True).distinct())
+            count = ordens.count()
             
-            messages.success(request, f"Ordem movida para {nova_est.nome} com sucesso.")
+            if count > 0:
+                # Atualiza todas as ordens de uma vez
+                ordens.update(estrutura=nova_est)
+                
+                # Recalcula ambas as estruturas e suas posições envolvidas
+                from .services import recalcular_estrutura, recalcular_posicao
+                from core.models import AtivoB3
+                
+                ativos = AtivoB3.objects.filter(codigo_isin__in=ativos_ids)
+                
+                for ativo in ativos:
+                    recalcular_posicao(estrutura_padrao, ativo)
+                    recalcular_posicao(nova_est, ativo)
+                
+                recalcular_estrutura(estrutura_padrao)
+                recalcular_estrutura(nova_est)
+                
+                messages.success(request, f"{count} ordens movidas para {nova_est.nome} com sucesso.")
+            else:
+                messages.warning(request, "Nenhuma ordem válida selecionada.")
+                
             return redirect('trading:alocar_orfas')
     
     ordens_orfas = estrutura_padrao.ordens.all()
