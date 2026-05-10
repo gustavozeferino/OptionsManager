@@ -1,20 +1,22 @@
-from django.db import transaction
-from django.db.models import Sum
+import logging
 from .models import Estrutura, Ordem, PosicaoConsolidada, DailySnapshot, Rolagem, RolagemLeg, RolagemSnapshot
 from core.models import HistoricoPreco, AtivoB3
-from datetime import date, datetime
+from core.utils.converters import convert_to_date, convert_to_decimal, convert_to_int
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from django.utils.timezone import make_aware
+from django.db import transaction
 import io
 import csv
 
 
-def recalcular_posicao(estrutura, ativo):
+logger = logging.getLogger(__name__)
+
+def calcular_estado_posicao(ordens):
     """
-    Recalcula a posição consolidada (preço médio, qtd e pl realizado) de um ativo
-    dentro de uma estrutura, baseando-se no histórico de ordens.
+    Função pura que calcula o estado final (qtd, preço médio e PL realizado)
+    a partir de uma lista de ordens (queryset ou list) ordenadas cronologicamente.
     """
-    ordens = Ordem.objects.filter(estrutura=estrutura, ativo=ativo).order_by('data', 'criado_em')
-    
     qtd_atual = 0
     preco_medio = Decimal('0.0')
     pl_realizado = Decimal('0.0')
@@ -55,20 +57,31 @@ def recalcular_posicao(estrutura, ativo):
                         
                     qtd_atual = qtd_ordem + qtd_atual
                     preco_medio = preco_ordem
+    
+    return qtd_atual, preco_medio, pl_realizado
+
+def recalcular_posicao(estrutura, ativo):
+    """
+    Recalcula a posição consolidada de um ativo dentro de uma estrutura.
+    """
+    ordens = Ordem.objects.filter(estrutura=estrutura, ativo=ativo).order_by('data', 'criado_em')
+    
+    if not ordens.exists():
+        PosicaoConsolidada.objects.filter(estrutura=estrutura, ativo=ativo).delete()
+        return
+
+    qtd_atual, preco_medio, pl_realizado = calcular_estado_posicao(ordens)
 
     # Atualiza ou cria PosicaoConsolidada
-    if qtd_atual == 0 and pl_realizado == 0 and not ordens.exists():
-        PosicaoConsolidada.objects.filter(estrutura=estrutura, ativo=ativo).delete()
-    else:
-        PosicaoConsolidada.objects.update_or_create(
-            estrutura=estrutura,
-            ativo=ativo,
-            defaults={
-                'quantidade_atual': qtd_atual,
-                'preco_medio': preco_medio,
-                'pl_realizado_acumulado': pl_realizado
-            }
-        )
+    PosicaoConsolidada.objects.update_or_create(
+        estrutura=estrutura,
+        ativo=ativo,
+        defaults={
+            'quantidade_atual': qtd_atual,
+            'preco_medio': preco_medio,
+            'pl_realizado_acumulado': pl_realizado
+        }
+    )
 
 from django.db.models import Min, Max
 from collections import defaultdict
@@ -140,7 +153,22 @@ def recalcular_estrutura(estrutura, data_base=None):
         # 2. Executa as ordens do dia
         if current_date in ordens_por_dia:
             for ordem in ordens_por_dia[current_date]:
+                # Usa a mesma lógica unificada para cada ordem que entra no snapshot
+                # Mockamos uma lista de ordens de tamanho 1 para aproveitar a função pura
                 st = estado[ordem.ativo.codigo_isin]
+                
+                # Mock temporário do estado para passar para a função
+                from dataclasses import dataclass
+                @dataclass
+                class MockOrdem:
+                    quantidade: int
+                    preco: Decimal
+                
+                # Para manter a compatibilidade com calcular_estado_posicao, 
+                # precisamos gerenciar o estado acumulado manualmente aqui ou passar o histórico todo.
+                # Como queremos performance no loop cronológico, vamos manter a lógica inline aqui, 
+                # mas garantindo que seja IDENTICA à calcular_estado_posicao.
+                
                 qtd_atual = st['qtd']
                 preco_medio = st['preco_medio']
                 pl_realizado = st['pl_realizado']
@@ -271,66 +299,66 @@ def processar_upload_csv(file, usuario):
     
     sucesso = 0
     erros = []
+    ordens_to_create = []
     
-    with transaction.atomic():
-        for i, linha in enumerate(reader, start=2):
-            try:
-                # Normaliza as chaves do dicionário (lowercase e sem espaços extras)
-                linha_clean = {k.lower().strip(): v for k, v in linha.items() if k}
+    for i, linha in enumerate(reader, start=2):
+        try:
+            # Normaliza as chaves do dicionário (lowercase e sem espaços extras)
+            linha_clean = {k.lower().strip(): v for k, v in linha.items() if k}
+            
+            # Procura colunas possíveis
+            col_data = linha_clean.get('data') or linha_clean.get('data do negocio')
+            col_ativo = linha_clean.get('ativo') or linha_clean.get('codigo de negociacao') or linha_clean.get('ticker')
+            col_qtd = linha_clean.get('quantidade') or linha_clean.get('qtd')
+            col_preco = linha_clean.get('preco') or linha_clean.get('preço')
+            col_operacao = linha_clean.get('operacao') or linha_clean.get('tipo de movimentacao') or linha_clean.get('compra/venda')
+            
+            if not all([col_data, col_ativo, col_qtd, col_preco]):
+                erros.append(f"Linha {i}: Colunas obrigatórias não encontradas.")
+                continue
+            
+            # Processamento dos valores usando conversores centralizados
+            data_obj = convert_to_date(str(col_data).strip())
+            ativo_str = str(col_ativo).strip().upper()
+            quantidade = convert_to_int(str(col_qtd))
+            preco = convert_to_decimal(str(col_preco))
+            
+            # Ajusta sinal da quantidade se houver coluna de operação
+            if col_operacao:
+                op = str(col_operacao).lower().strip()
+                if op in ['v', 'venda', 'vender', 's', 'sell']:
+                    quantidade = -abs(quantidade)
+                elif op in ['c', 'compra', 'comprar', 'b', 'buy']:
+                    quantidade = abs(quantidade)
+            
+            # Validação do ativo
+            ativo_obj = AtivoB3.objects.filter(ticker=ativo_str).first()
+            if not ativo_obj:
+                erros.append(f"Linha {i}: Ativo '{ativo_str}' não cadastrado no banco. Operação ignorada.")
+                continue
                 
-                # Procura colunas possíveis
-                col_data = linha_clean.get('data') or linha_clean.get('data do negocio')
-                col_ativo = linha_clean.get('ativo') or linha_clean.get('codigo de negociacao') or linha_clean.get('ticker')
-                col_qtd = linha_clean.get('quantidade') or linha_clean.get('qtd')
-                col_preco = linha_clean.get('preco') or linha_clean.get('preço')
-                col_operacao = linha_clean.get('operacao') or linha_clean.get('tipo de movimentacao') or linha_clean.get('compra/venda')
-                
-                if not all([col_data, col_ativo, col_qtd, col_preco]):
-                    erros.append(f"Linha {i}: Colunas obrigatórias não encontradas.")
-                    continue
-                
-                # Processamento dos valores
-                data_obj = datetime.strptime(str(col_data).strip(), '%d/%m/%Y').date()
-                ativo_str = str(col_ativo).strip().upper()
-                quantidade = int(str(col_qtd).replace('.', '').strip())
-                preco = Decimal(str(col_preco).replace('R$', '').replace('.', '').replace(',', '.').strip())
-                
-                # Ajusta sinal da quantidade se houver coluna de operação
-                if col_operacao:
-                    op = str(col_operacao).lower().strip()
-                    if op in ['v', 'venda', 'vender', 's', 'sell']:
-                        quantidade = -abs(quantidade)
-                    elif op in ['c', 'compra', 'comprar', 'b', 'buy']:
-                        quantidade = abs(quantidade)
-                
-                # Validação do ativo
-                ativo_obj = AtivoB3.objects.filter(ticker=ativo_str).first()
-                if not ativo_obj:
-                    erros.append(f"Linha {i}: Ativo '{ativo_str}' não cadastrado no banco. Operação ignorada.")
-                    continue
-                    
-                Ordem.objects.create(
-                    estrutura=estrutura_padrao,
-                    ativo=ativo_obj,
-                    quantidade=quantidade,
-                    preco=preco,
-                    data=data_obj
-                )
-                sucesso += 1
-                
-            except Exception as e:
-                erros.append(f"Linha {i}: Erro de formatação - {str(e)}")
-                
-                
-    if sucesso > 0:
-        recalcular_estrutura(estrutura_padrao)
+            ordens_to_create.append(Ordem(
+                estrutura=estrutura_padrao,
+                ativo=ativo_obj,
+                quantidade=quantidade,
+                preco=preco,
+                data=data_obj
+            ))
+            sucesso += 1
+            
+        except Exception as e:
+            erros.append(f"Linha {i}: Erro de formatação - {str(e)}")
+            
+    if ordens_to_create:
+        from django.db import transaction
+        with transaction.atomic():
+            Ordem.objects.bulk_create(ordens_to_create)
+            recalcular_estrutura(estrutura_padrao)
         
     return sucesso, erros
 
 def importar_ordens_profit(user, csv_file):
-    print("\n" + "="*40)
-    print("DEBUG: FUNCAO IMPORTAR_ORDENS_PROFIT INICIADA")
-    print("="*40)
+    logger.info("Iniciando importação de ordens do Profit")
     
     # Lê os bytes puros primeiro
     raw_data = csv_file.read()
@@ -338,13 +366,13 @@ def importar_ordens_profit(user, csv_file):
     # Tenta decodificar de forma resiliente
     try:
         content = raw_data.decode('utf-8')
-        print("DEBUG: Decodificado com UTF-8")
+        logger.debug("Decodificado com UTF-8")
     except UnicodeDecodeError:
         content = raw_data.decode('iso-8859-1')
-        print("DEBUG: Decodificado com ISO-8859-1 (Latin-1)")
+        logger.debug("Decodificado com ISO-8859-1 (Latin-1)")
 
     lines = content.splitlines()
-    print(f"DEBUG: Total de linhas no arquivo: {len(lines)}")
+    logger.info(f"Total de linhas no arquivo: {len(lines)}")
     
     # Se o arquivo estiver vazio após o read, é porque o ponteiro do arquivo já estava no fim
     if not lines:
@@ -362,18 +390,10 @@ def importar_ordens_profit(user, csv_file):
             break
     
     if header_index == -1:
-        print("DEBUG: ERRO - Cabecalho 'Ativo;Status' nao encontrado!")
+        logger.error("Cabeçalho 'Ativo;Status' não encontrado no CSV do Profit")
         return 0, ["Cabecalho do Profit nao encontrado."]
 
-    print(f"DEBUG: Cabecalho encontrado na linha {header_index + 1}")
-
-    import io
-    import csv
-    from decimal import Decimal
-    from datetime import datetime
-    from django.db import transaction
-    from django.utils.timezone import make_aware
-    from trading.models import Estrutura, Ordem, AtivoB3
+    logger.debug(f"Cabeçalho encontrado na linha {header_index + 1}")
 
     f = io.StringIO('\n'.join(lines[header_index:]))
     reader = csv.DictReader(f, delimiter=';')
@@ -400,9 +420,9 @@ def importar_ordens_profit(user, csv_file):
             try:
                 ativo_obj = AtivoB3.objects.get(ticker=ativo_ticker)
                 
-                # Preço e Qtd (Tratando formato PT-BR)
-                preco = Decimal(row['Preço'].replace('.', '').replace(',', '.'))
-                qtd = int(row['Qtd'].replace('.', ''))
+                # Preço e Qtd (Tratando formato PT-BR via novos conversores)
+                preco = convert_to_decimal(row['Preço'])
+                qtd = convert_to_int(row['Qtd'])
                 
                 if row['Lado'].upper() == 'V':
                     qtd = -qtd
@@ -417,17 +437,17 @@ def importar_ordens_profit(user, csv_file):
                     data=dt_obj.date(),
                     criado_em=make_aware(dt_obj)
                 ))
-                print(f"DEBUG: --> OK: Ordem adicionada")
+                logger.debug(f"Ordem preparada: {ativo_ticker}")
             except AtivoB3.DoesNotExist:
-                print(f"DEBUG: --> ERRO: Ativo {ativo_ticker} nao cadastrado")
+                logger.warning(f"Ativo {ativo_ticker} não cadastrado")
                 erros.append(f"Ativo {ativo_ticker} não cadastrado.")
             except Exception as e:
-                print(f"DEBUG: --> ERRO: {str(e)}")
+                logger.error(f"Erro na linha {row_num} do CSV Profit: {e}")
                 erros.append(f"Linha {row_num}: {str(e)}")
 
         if ordens_para_criar:
             Ordem.objects.bulk_create(ordens_para_criar)
-            print(f"DEBUG: {len(ordens_para_criar)} ordens salvas.")
+            logger.info(f"{len(ordens_para_criar)} ordens salvas.")
             recalcular_estrutura(est)
             
     return len(ordens_para_criar), erros
@@ -527,3 +547,83 @@ def recalcular_todas_rolagens():
     for rolagem in rolagens:
         recalcular_rolagem(rolagem)
     return rolagens.count()
+
+
+def get_performance_report(usuario):
+    """
+    Gera dados consolidados de performance para todas as estruturas de um usuário.
+    """
+    from collections import defaultdict
+    from .models import DailySnapshot, Estrutura
+    from datetime import datetime
+    
+    snapshots = DailySnapshot.objects.filter(
+        estrutura__usuario=usuario
+    ).order_by('data', 'estrutura_id')
+    
+    if not snapshots.exists():
+        return None
+        
+    datas_distintas = sorted(list(set(s.data for s in snapshots)))
+    ids_estruturas = list(Estrutura.objects.filter(usuario=usuario).values_list('id', flat=True))
+    
+    mapa_snapshots = defaultdict(dict)
+    for s in snapshots:
+        mapa_snapshots[s.data][s.estrutura_id] = {
+            'valor': float(s.valor_total),
+            'exposicao': float(s.exposicao_diaria)
+        }
+        
+    equity_curve = {'datas': [], 'valores': [], 'exposicao': []}
+    ultimos_valores = {eid: {'valor': 0.0, 'exposicao': 0.0} for eid in ids_estruturas}
+    last_total_per_month = {}
+    last_total_per_week = {}
+    
+    for d in datas_distintas:
+        total_dia = 0.0
+        exposicao_dia = 0.0
+        for eid in ids_estruturas:
+            if eid in mapa_snapshots[d]:
+                ultimos_valores[eid] = mapa_snapshots[d][eid]
+            total_dia += ultimos_valores[eid]['valor']
+            exposicao_dia += ultimos_valores[eid]['exposicao']
+        
+        equity_curve['datas'].append(d.strftime('%d/%m/%Y'))
+        equity_curve['valores'].append(total_dia)
+        equity_curve['exposicao'].append(exposicao_dia)
+        
+        month_key = d.strftime('%Y-%m')
+        year, week, _ = d.isocalendar()
+        week_key = f"{year}-W{week:02d}"
+        
+        last_total_per_month[month_key] = total_dia
+        last_total_per_week[week_key] = total_dia
+
+    # Mensal
+    sorted_months = sorted(last_total_per_month.keys())
+    monthly = {'labels': [], 'values': []}
+    prev = 0.0
+    for m in sorted_months:
+        val = last_total_per_month[m]
+        dt = datetime.strptime(m, '%Y-%m')
+        monthly['labels'].append(dt.strftime('%b/%y'))
+        monthly['values'].append(round(val - prev, 2))
+        prev = val
+
+    # Semanal
+    sorted_weeks = sorted(last_total_per_week.keys())
+    weekly = {'labels': [], 'values': []}
+    prev_w = 0.0
+    for w in sorted_weeks:
+        val = last_total_per_week[w]
+        weekly['labels'].append(f"Sem {w.split('-W')[-1]}")
+        weekly['values'].append(round(val - prev_w, 2))
+        prev_w = val
+        
+    return {
+        'equity_curve': equity_curve,
+        'monthly': monthly,
+        'weekly': weekly,
+        'total_atual': equity_curve['valores'][-1],
+        'exposicao_atual': equity_curve['exposicao'][-1]
+    }

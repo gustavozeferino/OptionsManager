@@ -1,12 +1,13 @@
-"""
-Serviços para importação de dados da B3.
-"""
+import logging
 import pandas as pd
 from django.db import transaction
-from decimal import Decimal, InvalidOperation
-from datetime import datetime
-from .models import AtivoB3
+from .models import AtivoB3, OpenInterest, AtivoMonitorado
+from core.utils.converters import (
+    convert_to_date, convert_to_decimal, convert_to_int, 
+    convert_to_bool, normalize_str, find_column
+)
 
+logger = logging.getLogger(__name__)
 
 def importar_csv_b3(file_path):
     """
@@ -88,10 +89,10 @@ def importar_csv_b3(file_path):
                     categoria = str(row.get('Categoria', '')).strip()
                     
                     # Conversão de datas (formato DD/MM/YYYY)
-                    data_expiracao = _converter_data(row.get('Data de expiração', ''))
-                    data_inicio_negocio = _converter_data(row.get('Data início negócio', ''))
-                    data_fim_negocio = _converter_data(row.get('Data fim negócio', ''))
-                    data_inicio_evento_corp = _converter_data(row.get('Data início evento corp.', ''))
+                    data_expiracao = convert_to_date(row.get('Data de expiração', ''))
+                    data_inicio_negocio = convert_to_date(row.get('Data início negócio', ''))
+                    data_fim_negocio = convert_to_date(row.get('Data fim negócio', ''))
+                    data_inicio_evento_corp = convert_to_date(row.get('Data início evento corp.', ''))
                     
                     # Códigos
                     codigo_isin = str(row.get('Código ISIN', '')).strip()
@@ -99,14 +100,14 @@ def importar_csv_b3(file_path):
                     codigo_especificacao = str(row.get('Cód. de especificação', '')).strip()
                     
                     # Conversão de inteiros
-                    id_distribuicao = _converter_inteiro(row.get('Identificador distribuição', ''))
-                    tamanho_lote = _converter_inteiro(row.get('Tamanho de lote', ''))
-                    fator_preco = _converter_inteiro(row.get('Fator de preço', ''))
-                    dias_liquidacao = _converter_inteiro(row.get('Dias para liquidação', ''))
+                    id_distribuicao = convert_to_int(row.get('Identificador distribuição', ''))
+                    tamanho_lote = convert_to_int(row.get('Tamanho de lote', ''))
+                    fator_preco = convert_to_int(row.get('Fator de preço', ''))
+                    dias_liquidacao = convert_to_int(row.get('Dias para liquidação', ''))
                     
                     # Conversão de decimais (formato com vírgula: '7,6')
-                    preco_exercicio = _converter_decimal(row.get('Preço de exercício', ''))
-                    capital_social = _converter_decimal(row.get('Capital social', ''))
+                    preco_exercicio = convert_to_decimal(row.get('Preço de exercício', ''))
+                    capital_social = convert_to_decimal(row.get('Capital social', ''))
                     
                     # Campos de texto
                     tipo_opcao = str(row.get('Tipo de opção', '')).strip()
@@ -120,8 +121,8 @@ def importar_csv_b3(file_path):
                     nome_instituicao = str(row.get('Nome da instituição', '')).strip()
                     
                     # Conversão de booleanos
-                    ind_premio_antecipado = _converter_booleano(row.get('Ind. prêmio antecipado', ''))
-                    exercicio_automatico = _converter_booleano(row.get('Exercício automático', ''))
+                    ind_premio_antecipado = convert_to_bool(row.get('Ind. prêmio antecipado', ''))
+                    exercicio_automatico = convert_to_bool(row.get('Exercício automático', ''))
                     
                     # Busca ou cria o registro
                     ativo_b3, created = AtivoB3.objects.update_or_create(
@@ -186,132 +187,8 @@ def importar_csv_b3(file_path):
     return stats
 
 
-def _converter_data(valor):
-    """
-    Converte string de data no formato DD/MM/YYYY para objeto date.
-    
-    Args:
-        valor: String com data no formato DD/MM/YYYY ou None
-        
-    Returns:
-        date ou None
-    """
-    if not valor or str(valor).strip() == '' or str(valor).lower() == 'nan':
-        return None
-    
-    try:
-        valor_str = str(valor).strip()
-        # Tenta parsear formato DD/MM/YYYY
-        data = datetime.strptime(valor_str, '%d/%m/%Y')
-        return data.date()
-    except (ValueError, TypeError):
-        try:
-            # Tenta parsear outros formatos com pandas
-            data = pd.to_datetime(valor_str, errors='coerce', dayfirst=True)
-            if pd.notna(data):
-                return data.date()
-        except Exception:
-            pass
-    return None
-
-
-def _converter_decimal(valor):
-    """
-    Converte string com número decimal (formato brasileiro com vírgula) para Decimal.
-    Exemplo: '7,6' -> Decimal('7.6')
-    
-    Args:
-        valor: String com número decimal ou None
-        
-    Returns:
-        Decimal ou None
-    """
-    if not valor or str(valor).strip() == '' or str(valor).lower() == 'nan':
-        return None
-    
-    try:
-        valor_str = str(valor).strip()
-        # Remove espaços e substitui vírgula por ponto
-        valor_limpo = valor_str.replace(' ', '').replace(',', '.')
-        # Remove caracteres não numéricos (exceto ponto e sinal negativo)
-        valor_limpo = ''.join(c for c in valor_limpo if c.isdigit() or c in '.-')
-        if valor_limpo:
-            return Decimal(valor_limpo)
-    except (InvalidOperation, ValueError, TypeError):
-        pass
-    return None
-
-
-def _converter_inteiro(valor):
-    """
-    Converte string para inteiro.
-    
-    Args:
-        valor: String com número inteiro ou None
-        
-    Returns:
-        int ou None
-    """
-    if not valor or str(valor).strip() == '' or str(valor).lower() == 'nan':
-        return None
-    
-    try:
-        valor_str = str(valor).strip().replace(' ', '')
-        return int(float(valor_str))  # Converte via float primeiro para lidar com decimais
-    except (ValueError, TypeError):
-        return None
-
-
-def _converter_booleano(valor):
-    """
-    Converte string para booleano.
-    Aceita: 'S', 'SIM', 'TRUE', '1', 'Y', 'YES' -> True
-    Outros -> False
-    
-    Args:
-        valor: String com valor booleano ou None
-        
-    Returns:
-        bool
-    """
-    if not valor or str(valor).strip() == '' or str(valor).lower() == 'nan':
-        return False
-    
-    valor_str = str(valor).strip().upper()
-    valores_true = ['S', 'SIM', 'TRUE', '1', 'Y', 'YES', 'VERDADEIRO']
-    return valor_str in valores_true
-
 import re
 import io
-import unicodedata
-from .models import OpenInterest, AtivoMonitorado
-
-def _normalize_str(s):
-    if not s: return ""
-    return "".join(
-        c for c in unicodedata.normalize('NFD', str(s))
-        if unicodedata.category(c) != 'Mn'
-    ).upper().strip()
-
-def _find_col(keywords, df_cols):
-    normalized_cols = {_normalize_str(c): c for c in df_cols}
-    for k in keywords:
-        norm_k = _normalize_str(k)
-        if norm_k in normalized_cols:
-            return normalized_cols[norm_k]
-        for norm_c, original_c in normalized_cols.items():
-            if norm_k in norm_c:
-                return original_c
-    return None
-
-def _converter_inteiro_csv_oi(valor):
-    if not valor or str(valor).strip() in ('', '-', 'nan'):
-        return None
-    try:
-        valor_str = str(valor).strip().replace('.', '').replace(' ', '')
-        return int(float(valor_str))
-    except (ValueError, TypeError):
-        return None
 
 def processar_csv_open_interest(file_content, filename):
     stats = {'novos': 0, 'atualizados': 0, 'erros': []}
@@ -333,7 +210,7 @@ def processar_csv_open_interest(file_content, filename):
     linha_cabecalho = None
     for i, texto_linha in enumerate(preview_raw):
         # Usamos uma busca insensível a acentos no cabeçalho
-        linha_norm = _normalize_str(texto_linha)
+        linha_norm = normalize_str(texto_linha)
         if 'ISIN' in linha_norm or 'INSTRUMENTO' in linha_norm:
             linha_cabecalho = i
             break
@@ -349,7 +226,7 @@ def processar_csv_open_interest(file_content, filename):
         stats['erros'].append(f"Erro ao ler CSV: {e}")
         return stats
         
-    coluna_isin = _find_col(['ISIN'], df.columns)
+    coluna_isin = find_column(['ISIN'], df.columns)
     if not coluna_isin:
         stats['erros'].append("Coluna ISIN não identificada no arquivo.")
         return stats
@@ -366,23 +243,23 @@ def processar_csv_open_interest(file_content, filename):
         return stats
 
     cols = {
-        'ticker': _find_col(['Instrumento financeiro'], df.columns),
-        'ativo_objeto': _find_col(['Ativo'], df.columns),
-        'codigo_expiracao': _find_col(['Código de expiração', 'Expiração'], df.columns),
-        'segmento': _find_col(['Segmento'], df.columns),
-        'contratos_em_aberto': _find_col(['Contratos em aberto'], df.columns),
-        'variacao_contratos': _find_col(['Variação de contratos em aberto'], df.columns),
-        'id_distribuicao': _find_col(['Identificador da distribuição'], df.columns),
-        'quantidade_coberta': _find_col(['Quantidade coberta'], df.columns),
-        'total_travas': _find_col(['Total de posições bloqueadas', 'BLOQUEADAS'], df.columns),
-        'quantidade_descoberta': _find_col(['Quantidade descoberta'], df.columns),
-        'total_posicoes': _find_col(['Total de posições'], df.columns),
-        'quantidade_tomadores': _find_col(['Quantidade de tomadores'], df.columns),
-        'quantidade_doadores': _find_col(['Quantidade de doadores'], df.columns),
-        'quantidade_atual': _find_col(['Quantidade atual'], df.columns),
-        'contratos_travados': _find_col(['Contratos travados'], df.columns),
-        'contratos_transferencia': _find_col(['Contratos baixados por transferência'], df.columns),
-        'preco_termo': _find_col(['Preço a termo'], df.columns)
+        'ticker': find_column(['Instrumento financeiro'], df.columns),
+        'ativo_objeto': find_column(['Ativo'], df.columns),
+        'codigo_expiracao': find_column(['Código de expiração', 'Expiração'], df.columns),
+        'segmento': find_column(['Segmento'], df.columns),
+        'contratos_em_aberto': find_column(['Contratos em aberto'], df.columns),
+        'variacao_contratos': find_column(['Variação de contratos em aberto'], df.columns),
+        'id_distribuicao': find_column(['Identificador da distribuição'], df.columns),
+        'quantidade_coberta': find_column(['Quantidade coberta'], df.columns),
+        'total_travas': find_column(['Total de posições bloqueadas', 'BLOQUEADAS'], df.columns),
+        'quantidade_descoberta': find_column(['Quantidade descoberta'], df.columns),
+        'total_posicoes': find_column(['Total de posições'], df.columns),
+        'quantidade_tomadores': find_column(['Quantidade de tomadores'], df.columns),
+        'quantidade_doadores': find_column(['Quantidade de doadores'], df.columns),
+        'quantidade_atual': find_column(['Quantidade atual'], df.columns),
+        'contratos_travados': find_column(['Contratos travados'], df.columns),
+        'contratos_transferencia': find_column(['Contratos baixados por transferência'], df.columns),
+        'preco_termo': find_column(['Preço a termo'], df.columns)
     }
 
     with transaction.atomic():
@@ -399,19 +276,19 @@ def processar_csv_open_interest(file_content, filename):
                     'ativo_objeto': ativo_obj.ativo_objeto if ativo_obj else (str(row.get(cols['ativo_objeto'])).strip() if cols['ativo_objeto'] else ''),
                     'codigo_expiracao': str(row.get(cols['codigo_expiracao'])).strip() if cols['codigo_expiracao'] else '',
                     'segmento': str(row.get(cols['segmento'])).strip() if cols['segmento'] else '',
-                    'contratos_em_aberto': _converter_inteiro_csv_oi(row.get(cols['contratos_em_aberto'])),
-                    'variacao_contratos': _converter_inteiro_csv_oi(row.get(cols['variacao_contratos'])),
+                    'contratos_em_aberto': convert_to_int(row.get(cols['contratos_em_aberto'])),
+                    'variacao_contratos': convert_to_int(row.get(cols['variacao_contratos'])),
                     'id_distribuicao': str(row.get(cols['id_distribuicao'])).strip() if cols['id_distribuicao'] else '',
-                    'quantidade_coberta': _converter_inteiro_csv_oi(row.get(cols['quantidade_coberta'])),
-                    'total_travas': _converter_inteiro_csv_oi(row.get(cols['total_travas'])),
-                    'quantidade_descoberta': _converter_inteiro_csv_oi(row.get(cols['quantidade_descoberta'])),
-                    'total_posicoes': _converter_inteiro_csv_oi(row.get(cols['total_posicoes'])),
-                    'quantidade_tomadores': _converter_inteiro_csv_oi(row.get(cols['quantidade_tomadores'])),
-                    'quantidade_doadores': _converter_inteiro_csv_oi(row.get(cols['quantidade_doadores'])),
-                    'quantidade_atual': _converter_inteiro_csv_oi(row.get(cols['quantidade_atual'])),
-                    'contratos_travados': _converter_inteiro_csv_oi(row.get(cols['contratos_travados'])),
-                    'contratos_transferencia': _converter_inteiro_csv_oi(row.get(cols['contratos_transferencia'])),
-                    'preco_termo': _converter_decimal(row.get(cols['preco_termo']))
+                    'quantidade_coberta': convert_to_int(row.get(cols['quantidade_coberta'])),
+                    'total_travas': convert_to_int(row.get(cols['total_travas'])),
+                    'quantidade_descoberta': convert_to_int(row.get(cols['quantidade_descoberta'])),
+                    'total_posicoes': convert_to_int(row.get(cols['total_posicoes'])),
+                    'quantidade_tomadores': convert_to_int(row.get(cols['quantidade_tomadores'])),
+                    'quantidade_doadores': convert_to_int(row.get(cols['quantidade_doadores'])),
+                    'quantidade_atual': convert_to_int(row.get(cols['quantidade_atual'])),
+                    'contratos_travados': convert_to_int(row.get(cols['contratos_travados'])),
+                    'contratos_transferencia': convert_to_int(row.get(cols['contratos_transferencia'])),
+                    'preco_termo': convert_to_decimal(row.get(cols['preco_termo']))
                 }
                 # Replace None defaults with 0 for integer fields
                 for k, v in defaults.items():
@@ -432,6 +309,88 @@ def processar_csv_open_interest(file_content, filename):
                 else:
                     stats['atualizados'] += 1
             except Exception as e:
+                logger.error(f"Erro na linha ISIN {isin} do CSV OI: {e}")
                 stats['erros'].append(f"Erro na linha ISIN {isin}: {e}")
 
+    return stats
+
+
+def get_option_chain(ativo_objeto, data_expiracao):
+    """
+    Monta a grade de opções (Option Chain) para um ativo objeto e vencimento específicos.
+    """
+    from .models import AtivoB3, HistoricoPreco
+    from django.db.models import Max
+    
+    opcoes = AtivoB3.objects.filter(
+        ativo_objeto=ativo_objeto,
+        data_expiracao=data_expiracao
+    ).order_by('preco_exercicio')
+    
+    # Preços recentes das opções
+    max_date = HistoricoPreco.objects.filter(ativo__in=opcoes).aggregate(Max('data_pregao'))['data_pregao__max'] if opcoes.exists() else None
+    
+    precos_recentes = {
+        h.ativo_id: h 
+        for h in HistoricoPreco.objects.filter(
+            ativo__in=opcoes,
+            data_pregao=max_date
+        )
+    } if max_date else {}
+    
+    chain_dict = {}
+    for op in opcoes:
+        strike = op.preco_exercicio
+        if strike not in chain_dict:
+            chain_dict[strike] = {
+                'strike': strike, 
+                'call': None, 'put': None, 
+                'call_hist': None, 'put_hist': None
+            }
+            
+        hist = precos_recentes.get(op.codigo_isin)
+        tipo = op.tipo_opcao.strip().upper()
+        
+        if 'CALL' in tipo or 'COMPRA' in tipo:
+            chain_dict[strike]['call'] = op
+            chain_dict[strike]['call_hist'] = hist
+        elif 'PUT' in tipo or 'VENDA' in tipo:
+            chain_dict[strike]['put'] = op
+            chain_dict[strike]['put_hist'] = hist
+            
+    chain_list = list(chain_dict.values())
+    chain_list.sort(key=lambda x: x['strike'] if x['strike'] else 0)
+    return chain_list
+
+def get_ativo_stats(ticker):
+    """
+    Calcula estatísticas de preço e variações para um ativo objeto.
+    """
+    from .models import AtivoB3, HistoricoPreco
+    ativo = AtivoB3.objects.filter(ticker=ticker).first()
+    if not ativo:
+        return None
+        
+    hist = HistoricoPreco.objects.filter(ativo=ativo, fechamento__gt=0).order_by('-data_pregao')
+    if not hist.exists():
+        return None
+        
+    h_atual = hist.first()
+    stats = {'preco_atual': float(h_atual.fechamento)}
+    
+    # Função auxiliar para variação
+    def calc_var(atual, anterior):
+        if not anterior or float(anterior) == 0: return 0
+        return ((float(atual) / float(anterior)) - 1) * 100
+
+    # Variações
+    count = hist.count()
+    h_ontem = hist[1] if count > 1 else None
+    h_5d = hist[min(5, count-1)] if count > 1 else None
+    h_30d = hist[min(30, count-1)] if count > 1 else None
+    
+    stats['var_diaria'] = calc_var(h_atual.fechamento, h_ontem.fechamento if h_ontem else None)
+    stats['var_5d'] = calc_var(h_atual.fechamento, h_5d.fechamento if h_5d else None)
+    stats['var_30d'] = calc_var(h_atual.fechamento, h_30d.fechamento if h_30d else None)
+    
     return stats

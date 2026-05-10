@@ -16,6 +16,10 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Count, Max
 from trading.models import Estrutura
 from trading.services import recalcular_estrutura
+from core.utils.converters import (
+    convert_to_date, convert_to_decimal, convert_to_int, 
+    normalize_str, find_column
+)
 from collections import defaultdict
 from django.db.models import Sum, Avg, Q
 
@@ -66,47 +70,7 @@ def lista_logs(request):
 
 
 
-def clean_numeric(value):
-    """Trata R$, pontos de milhar e vírgulas decimais para formato brasileiro ou internacional."""
-    if pd.isna(value) or str(value).strip() in ('', '-', 'nan'):
-        return 0.0
-    s = str(value).replace('R$', '').replace(' ', '').strip()
-    
-    try:
-        if ',' in s:
-            s = s.replace('.', '').replace(',', '.')
-        elif '.' in s:
-            if s.count('.') > 1:
-                s = s.replace('.', '')
-            else:
-                s = s.replace('.', '')
-        return float(s)
-    except (ValueError, TypeError):
-        return 0.0
 
-def clean_int(value):
-    """Trata inteiros, removendo pontos de milhar (formato BR)."""
-    if pd.isna(value) or str(value).strip() in ['', '-']:
-        return 0
-    # Remove pontos de milhar (ex: 5.284 -> 5284)
-    s = str(value).replace('.', '').strip()
-    # Se houver vírgula, pegamos apenas a parte inteira (ex: 5284,00 -> 5284)
-    if ',' in s:
-        s = s.split(',')[0]
-    try:
-        return int(s)
-    except ValueError:
-        return 0
-
-def clean_date(value):
-    """Trata datas, ignorando hífens ou valores inválidos."""
-    if pd.isna(value) or str(value).strip() in ['', '-']:
-        return None
-    try:
-        # O dayfirst=True é vital para o formato brasileiro DD/MM/YYYY
-        return pd.to_datetime(value, dayfirst=True).date()
-    except:
-        return None
 
 @user_passes_test(apenas_admin)
 def upload_csv(request):
@@ -158,8 +122,8 @@ def upload_csv(request):
                 'ticker': str(row.get('Instrumento financeiro', 'S/N')).strip(),
                 'ativo_objeto': str(row.get('Ativo', '')).strip(),
                 'tipo_opcao': str(row.get('Tipo de opção', '')).strip(),
-                'preco_exercicio': clean_numeric(row.get('Preço de exercício', 0)),
-                'data_expiracao': clean_date(row.get('Data de expiração')),
+                'preco_exercicio': convert_to_decimal(row.get('Preço de exercício', 0)),
+                'data_expiracao': convert_to_date(row.get('Data de expiração')),
                 'segmento': str(row.get('Segmento', '')).strip(),
             }
 
@@ -334,61 +298,10 @@ def lista_ativos(request):
                 h.vwap_calculado = 0.0
             precos_recentes[h.ativo_id] = h
 
-    # Option Chain Builder
-    option_chain_dict = {}
-    for op in opcoes:
-        strike = op.preco_exercicio
-        if strike not in option_chain_dict:
-            option_chain_dict[strike] = {'strike': strike, 'call': None, 'put': None, 'call_hist': None, 'put_hist': None}
-            
-        hist = precos_recentes.get(op.codigo_isin)
-        
-        if op.tipo_opcao.strip().upper() == 'CALL':
-            option_chain_dict[strike]['call'] = op
-            option_chain_dict[strike]['call_hist'] = hist
-        else:
-            option_chain_dict[strike]['put'] = op
-            option_chain_dict[strike]['put_hist'] = hist
-            
-    chain_list = list(option_chain_dict.values())
-    chain_list.sort(key=lambda x: x['strike'] if x['strike'] else 0)
-
-    # Estatísticas do Ativo Objeto
-    ativo_obj_b3 = AtivoB3.objects.filter(ticker=ativo_filtro).first()
-    stats_ativo = None
-    if ativo_obj_b3:
-        hist_ativo = HistoricoPreco.objects.filter(ativo=ativo_obj_b3, fechamento__gt=0).order_by('-data_pregao')
-        if hist_ativo.exists():
-            stats_ativo = {}
-            h_atual = hist_ativo.first()
-            stats_ativo['preco_atual'] = float(h_atual.fechamento)
-            
-            # Variação Diária (comparado ao dia anterior)
-            if hist_ativo.count() > 1:
-                h_ontem = hist_ativo[1]
-                stats_ativo['var_diaria'] = ((float(h_atual.fechamento) / float(h_ontem.fechamento)) - 1) * 100 if float(h_ontem.fechamento) else 0
-            else:
-                stats_ativo['var_diaria'] = 0
-                
-            # Variação 5 dias
-            if hist_ativo.count() > 5:
-                h_5d = hist_ativo[5]
-                stats_ativo['var_5d'] = ((float(h_atual.fechamento) / float(h_5d.fechamento)) - 1) * 100 if float(h_5d.fechamento) else 0
-            elif hist_ativo.count() > 1:
-                h_5d = hist_ativo.last()
-                stats_ativo['var_5d'] = ((float(h_atual.fechamento) / float(h_5d.fechamento)) - 1) * 100 if float(h_5d.fechamento) else 0
-            else:
-                stats_ativo['var_5d'] = 0
-                
-            # Variação 30 dias
-            if hist_ativo.count() > 30:
-                h_30d = hist_ativo[30]
-                stats_ativo['var_30d'] = ((float(h_atual.fechamento) / float(h_30d.fechamento)) - 1) * 100 if float(h_30d.fechamento) else 0
-            elif hist_ativo.count() > 1:
-                h_30d = hist_ativo.last()
-                stats_ativo['var_30d'] = ((float(h_atual.fechamento) / float(h_30d.fechamento)) - 1) * 100 if float(h_30d.fechamento) else 0
-            else:
-                stats_ativo['var_30d'] = 0
+    # Option Chain e Estatísticas via Services
+    from .services import get_option_chain, get_ativo_stats
+    chain_list = get_option_chain(ativo_filtro, vencimento_filtro)
+    stats_ativo = get_ativo_stats(ativo_filtro)
 
     context = {
         'ativo_filtro': ativo_filtro,
@@ -482,27 +395,6 @@ def upload_precos(request):
             print(f"--- Arquivo carregado: {len(df):,} linhas.")
             print(f"--- Coluna identificada: '{coluna_isin}'")
 
-            # Mapeamento robusto de colunas por palavras-chave com normalização de acentos
-            def normalize_str(s):
-                if not s: return ""
-                return "".join(
-                    c for c in unicodedata.normalize('NFD', str(s))
-                    if unicodedata.category(c) != 'Mn'
-                ).upper().strip()
-
-            def find_col(keywords, df_cols):
-                normalized_cols = {normalize_str(c): c for c in df_cols}
-                for k in keywords:
-                    norm_k = normalize_str(k)
-                    # Primeiro tenta match exato na coluna normalizada
-                    if norm_k in normalized_cols:
-                        return normalized_cols[norm_k]
-                    # Depois tenta match parcial
-                    for norm_c, original_c in normalized_cols.items():
-                        if norm_k in norm_c:
-                            return original_c
-                return None
-
             # 3. FILTRAGEM EM MEMÓRIA (O segredo da performance)
             print("[2/4] Filtrando ativos monitorados...")
             # Apenas ativos que estejam relacionados aos Ativos Monitorados ativos
@@ -511,7 +403,7 @@ def upload_precos(request):
             set_isins = set(ativos_no_banco)
             
             # Filtro de Segmento
-            col_segmento = find_col(['Segmento', 'Segmento de Mercado', 'SEGMENTO'], df.columns)
+            col_segmento = find_column(['Segmento', 'Segmento de Mercado', 'SEGMENTO'], df.columns)
             if col_segmento:
                 segmentos_permitidos = ['CASH', 'EQUITY CALL', 'EQUITY PUT']
                 df[col_segmento] = df[col_segmento].astype(str).str.strip().str.upper()
@@ -532,15 +424,15 @@ def upload_precos(request):
             print(f"[3/4] Gravando {total_para_gravar} registros no banco...")
             relatorio = {'novos': 0, 'atualizados': 0, 'sem_alteracao': 0, 'logs': []}
 
-            col_abertura = find_col(['Preço de abertura', 'Abertura', 'ABR', 'PRECO ABR'], df.columns)
-            col_maximo = find_col(['Preço máximo', 'Máximo', 'MAXIMO', 'MAX', 'MAX.'], df.columns)
-            col_minimo = find_col(['Preço mínimo', 'Mínimo', 'MINIMO', 'MIN', 'MIN.'], df.columns)
-            col_fechamento = find_col(['Preço de fechamento', 'Fechamento', 'FECH', 'FECH.', 'Último', 'ULTIMO', 'ULT.', 'PRECO FECH'], df.columns)
-            col_ajuste = find_col(['Ajuste', 'AJUST.'], df.columns)
-            col_qtd_neg = find_col(['Quantidade de negócios', 'Negócios', 'NEGOCIOS', 'NEGOC.'], df.columns)
-            col_vol_fin = find_col(['Volume financeiro', 'Volume', 'VOL.', 'VOL FIN'], df.columns)
-            col_qtd_contratos = find_col(['Quantidade de contratos', 'Contratos', 'QTD. CONTRATOS', 'QTD CONTRATOS'], df.columns)
-            col_data_neg = find_col(['Data do negócio', 'Data'], df.columns)
+            col_abertura = find_column(['Preço de abertura', 'Abertura', 'ABR', 'PRECO ABR'], df.columns)
+            col_maximo = find_column(['Preço máximo', 'Máximo', 'MAXIMO', 'MAX', 'MAX.'], df.columns)
+            col_minimo = find_column(['Preço mínimo', 'Mínimo', 'MINIMO', 'MIN', 'MIN.'], df.columns)
+            col_fechamento = find_column(['Preço de fechamento', 'Fechamento', 'FECH', 'FECH.', 'Último', 'ULTIMO', 'ULT.', 'PRECO FECH'], df.columns)
+            col_ajuste = find_column(['Ajuste', 'AJUST.'], df.columns)
+            col_qtd_neg = find_column(['Quantidade de negócios', 'Negócios', 'NEGOCIOS', 'NEGOC.'], df.columns)
+            col_vol_fin = find_column(['Volume financeiro', 'Volume', 'VOL.', 'VOL FIN'], df.columns)
+            col_qtd_contratos = find_column(['Quantidade de contratos', 'Contratos', 'QTD. CONTRATOS', 'QTD CONTRATOS'], df.columns)
+            col_data_neg = find_column(['Data do negócio', 'Data'], df.columns)
 
             print(f"--- Mapeamento:")
             print(f"    - Abertura:   {col_abertura} (Exemplos: {df[col_abertura].head(2).tolist() if col_abertura else 'N/A'})")
@@ -572,14 +464,14 @@ def upload_precos(request):
                             ativo=ativo_obj,
                             data_pregao=dt_pregao,
                             defaults={
-                                'abertura': clean_numeric(row.get(col_abertura)) if col_abertura else 0,
-                                'maximo': clean_numeric(row.get(col_maximo)) if col_maximo else 0,
-                                'minimo': clean_numeric(row.get(col_minimo)) if col_minimo else 0,
-                                'fechamento': clean_numeric(row.get(col_fechamento)) if col_fechamento else 0,
-                                'ajuste': clean_numeric(row.get(col_ajuste)) if col_ajuste else 0,
-                                'quantidade_negocios': clean_int(row.get(col_qtd_neg)) if col_qtd_neg else 0,
-                                'volume_financeiro': clean_numeric(row.get(col_vol_fin)) if col_vol_fin else 0,
-                                'quantidade_contratos': clean_int(row.get(col_qtd_contratos)) if col_qtd_contratos else 0,
+                                'abertura': convert_to_decimal(row.get(col_abertura)) if col_abertura else 0,
+                                'maximo': convert_to_decimal(row.get(col_maximo)) if col_maximo else 0,
+                                'minimo': convert_to_decimal(row.get(col_minimo)) if col_minimo else 0,
+                                'fechamento': convert_to_decimal(row.get(col_fechamento)) if col_fechamento else 0,
+                                'ajuste': convert_to_decimal(row.get(col_ajuste)) if col_ajuste else 0,
+                                'quantidade_negocios': convert_to_int(row.get(col_qtd_neg)) if col_qtd_neg else 0,
+                                'volume_financeiro': convert_to_decimal(row.get(col_vol_fin)) if col_vol_fin else 0,
+                                'quantidade_contratos': convert_to_int(row.get(col_qtd_contratos)) if col_qtd_contratos else 0,
                             }
                         )
                         

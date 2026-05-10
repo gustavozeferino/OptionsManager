@@ -382,216 +382,30 @@ from core.models import AtivoB3
 from trading.models import Ordem, Estrutura
 
 logger = logging.getLogger(__name__)
-import io
-import csv
-from decimal import Decimal
-from datetime import datetime
-from django.db import transaction
-from django.utils.timezone import make_aware
-
-@login_required
-def importar_ordens_profit(user, csv_file):
-    print("\n--- INICIANDO IMPORTAÇÃO ---")
-    raw_data = csv_file.read()
-    
-    try:
-        content = raw_data.decode('utf-8')
-        print("Codificação detectada: UTF-8")
-    except UnicodeDecodeError:
-        content = raw_data.decode('iso-8859-1')
-        print("Codificação detectada: ISO-8859-1 (Latin-1)")
-
-    lines = content.splitlines()
-    print(f"Total de linhas lidas no arquivo: {len(lines)}")
-
-    # 1. Debug do cabeçalho
-    header_index = -1
-    for i, line in enumerate(lines):
-        if 'Ativo;' in line and 'Status;' in line:
-            header_index = i
-            print(f"Cabeçalho encontrado na linha {i+1}: {line[:50]}...")
-            break
-    
-    if header_index == -1:
-        print("ERRO: Cabeçalho não encontrado! Verifique o delimitador ou nomes das colunas.")
-        return 0, ["Cabeçalho do Profit não encontrado."]
-
-    # 2. Lendo os dados
-    f = io.StringIO('\n'.join(lines[header_index:]))
-    reader = csv.DictReader(f, delimiter=';')
-    
-    ordens_para_criar = []
-    erros = []
-    
-    from trading.models import Estrutura, Ordem, AtivoB3
-    estrutura_placeholder, _ = Estrutura.objects.get_or_create(
-        usuario=user, nome="Sem Estrutura", defaults={'slug': 'sem-estrutura'}
-    )
-
-    print("Iniciando processamento das linhas...")
-    with transaction.atomic():
-        for row_num, row in enumerate(reader, start=header_index + 2):
-            # Print de cada linha para ver o que o DictReader capturou
-            status = row.get('Status', '').strip()
-            ativo_nome = row.get('Ativo', '').strip()
-            
-            print(f"Linha {row_num}: Ativo={ativo_nome} | Status={status}")
-
-            if status != 'Executada':
-                print(f"   -> Ignorada: Status '{status}' não é 'Executada'")
-                continue
-
-            try:
-                # Busca Ativo
-                try:
-                    ativo = AtivoB3.objects.get(ticker=ativo_nome)
-                except AtivoB3.DoesNotExist:
-                    msg = f"Ativo '{ativo_nome}' não existe no banco de dados."
-                    print(f"   -> ERRO: {msg}")
-                    erros.append(f"Linha {row_num}: {msg}")
-                    continue
-
-                # Parse de valores
-                def parse_decimal(text):
-                    if not text or text == '-': return Decimal('0.00')
-                    return Decimal(text.replace('.', '').replace(',', '.'))
-
-                preco = parse_decimal(row['Preço'])
-                qtd_raw = row['Qtd'].replace('.', '')
-                qtd_total = int(qtd_raw)
-                
-                lado = row['Lado'].strip().upper()
-                quantidade = -abs(qtd_total) if lado == 'V' else abs(qtd_total)
-
-                dt_str = row['Criação'].strip()
-                dt_obj = datetime.strptime(dt_str, '%d/%m/%Y %H:%M:%S')
-                dt_aware = make_aware(dt_obj)
-
-                ordem = Ordem(
-                    estrutura=estrutura_placeholder,
-                    ativo=ativo,
-                    quantidade=quantidade,
-                    preco=preco,
-                    data=dt_aware.date(),
-                    criado_em=dt_aware,
-                    is_opening=True
-                )
-                ordens_para_criar.append(ordem)
-                print(f"   -> OK: Ordem preparada ({lado} {abs(quantidade)} de {ativo_nome})")
-
-            except Exception as e:
-                print(f"   -> ERRO CRÍTICO na linha {row_num}: {str(e)}")
-                erros.append(f"Linha {row_num}: {str(e)}")
-
-        if ordens_para_criar:
-            print(f"Salvando {len(ordens_para_criar)} ordens no banco...")
-            Ordem.objects.bulk_create(ordens_para_criar)
-            
-            from .services import recalcular_estrutura
-            recalcular_estrutura(estrutura_placeholder)
-            print("Importação concluída com sucesso.")
-        else:
-            print("Nenhuma ordem válida foi encontrada para importação.")
-
-    return len(ordens_para_criar), erros
 
 @login_required
 def relatorio_performance(request):
     """
-    View para relatórios detalhados de performance.
+    View para relatórios detalhados de performance utilizando services.
     """
-    # 1. Busca todos os snapshots do usuário
-    snapshots = DailySnapshot.objects.filter(
-        estrutura__usuario=request.user
-    ).order_by('data', 'estrutura_id')
+    import json
+    from .services import get_performance_report
+    report = get_performance_report(request.user)
     
-    if not snapshots.exists():
+    if not report:
         return render(request, 'trading/relatorios.html', {'empty': True})
         
-    # Agrupamento para Equity Curve e Exposição Histórica
-    datas_distintas = sorted(list(set(s.data for s in snapshots)))
-    ids_estruturas = list(Estrutura.objects.filter(usuario=request.user).values_list('id', flat=True))
-    
-    # Mapeia snapshots por data e estrutura
-    mapa_snapshots = defaultdict(dict)
-    for s in snapshots:
-        mapa_snapshots[s.data][s.estrutura_id] = {
-            'valor': float(s.valor_total),
-            'exposicao': float(s.exposicao_diaria)
-        }
-        
-    equity_curve_datas = []
-    equity_curve_valores = []
-    equity_curve_exposicao = []
-    
-    # Mantém o último valor conhecido de cada estrutura para preenchimento (fill-forward)
-    ultimos_valores = {eid: {'valor': 0.0, 'exposicao': 0.0} for eid in ids_estruturas}
-    
-    # Para cálculos de performance mensal/semanal
-    last_total_per_month = {}
-    last_total_per_week = {}
-    
-    for d in datas_distintas:
-        total_dia = 0.0
-        exposicao_dia = 0.0
-        for eid in ids_estruturas:
-            if eid in mapa_snapshots[d]:
-                ultimos_valores[eid]['valor'] = mapa_snapshots[d][eid]['valor']
-                ultimos_valores[eid]['exposicao'] = mapa_snapshots[d][eid]['exposicao']
-            total_dia += ultimos_valores[eid]['valor']
-            exposicao_dia += ultimos_valores[eid]['exposicao']
-        
-        equity_curve_datas.append(d.strftime('%d/%m/%Y'))
-        equity_curve_valores.append(total_dia)
-        equity_curve_exposicao.append(exposicao_dia)
-        
-        # Guarda o total do dia como potencial "último do período"
-        month_key = d.strftime('%Y-%m')
-        year, week, weekday = d.isocalendar()
-        week_key = f"{year}-W{week:02d}"
-        
-        last_total_per_month[month_key] = total_dia
-        last_total_per_week[week_key] = total_dia
-
-    # Calcula resultados mensais (deltas)
-    sorted_months = sorted(last_total_per_month.keys())
-    monthly_labels = []
-    monthly_values = []
-    prev_val = 0.0
-    for i, m in enumerate(sorted_months):
-        curr_val = last_total_per_month[m]
-        result = curr_val - prev_val if i > 0 else curr_val
-        
-        dt_obj = datetime.strptime(m, '%Y-%m')
-        monthly_labels.append(dt_obj.strftime('%b/%y'))
-        monthly_values.append(round(result, 2))
-        prev_val = curr_val
-
-    # Calcula resultados semanais (deltas)
-    sorted_weeks = sorted(last_total_per_week.keys())
-    weekly_labels = []
-    weekly_values = []
-    prev_val_w = 0.0
-    for i, w in enumerate(sorted_weeks):
-        curr_val = last_total_per_week[w]
-        result = curr_val - prev_val_w if i > 0 else curr_val
-        
-        weekly_labels.append(f"Sem {w.split('-W')[-1]}")
-        weekly_values.append(round(result, 2))
-        prev_val_w = curr_val
-
     context = {
-        'equity_datas': json.dumps(equity_curve_datas),
-        'equity_valores': json.dumps(equity_curve_valores),
-        'equity_exposicao': json.dumps(equity_curve_exposicao),
-        'monthly_labels': json.dumps(monthly_labels),
-        'monthly_values': json.dumps(monthly_values),
-        'weekly_labels': json.dumps(weekly_labels),
-        'weekly_values': json.dumps(weekly_values),
-        'total_atual': equity_curve_valores[-1] if equity_curve_valores else 0,
-        'exposicao_atual': equity_curve_exposicao[-1] if equity_curve_exposicao else 0,
+        'equity_datas': json.dumps(report['equity_curve']['datas']),
+        'equity_valores': json.dumps(report['equity_curve']['valores']),
+        'equity_exposicao': json.dumps(report['equity_curve']['exposicao']),
+        'monthly_labels': json.dumps(report['monthly']['labels']),
+        'monthly_values': json.dumps(report['monthly']['values']),
+        'weekly_labels': json.dumps(report['weekly']['labels']),
+        'weekly_values': json.dumps(report['weekly']['values']),
+        'total_atual': report['total_atual'],
+        'exposicao_atual': report['exposicao_atual'],
     }
-    
     return render(request, 'trading/relatorios.html', context)
 
 
