@@ -1,0 +1,256 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="container mx-auto mt-8">
+    <h2 class="text-2xl font-bold mb-4">Dashboard de Negócios B3</h2>
+    
+    <div class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div>
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="segmento">Segmento</label>
+                <select id="segmento" class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    <option value="">Selecione um Segmento</option>
+                    {% for seg in segmentos %}
+                    <option value="{{ seg }}">{{ seg }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="ativo">Ativo (Ticker)</label>
+                <select id="ativo" class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" disabled>
+                    <option value="">Selecione um Ativo</option>
+                </select>
+            </div>
+        </div>
+        
+        <div id="main-chart" style="width: 100%; height: 600px; min-height: 600px; display: block;"></div>
+        
+        <div id="tableContainer" class="mt-8 hidden">
+            <h3 class="text-xl font-bold mb-4">Dados do Histórico: <span id="tableTicker"></span></h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-300">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="py-2 px-4 border-b">Data</th>
+                            <th class="py-2 px-4 border-b">Abertura</th>
+                            <th class="py-2 px-4 border-b">Fechamento</th>
+                            <th class="py-2 px-4 border-b">Mínimo</th>
+                            <th class="py-2 px-4 border-b">Máximo</th>
+                            <th class="py-2 px-4 border-b">Volume</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody">
+                        <!-- Rows will be added here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{% static 'core/js/echarts.min.js' %}"></script>
+<script src="{% static 'core/js/vintage.js' %}"></script>
+
+<script>
+    const segmentoSelect = document.getElementById('segmento');
+    const ativoSelect = document.getElementById('ativo');
+    let myChart = null;
+
+    segmentoSelect.addEventListener('change', function() {
+        const seg = this.value;
+        if (!seg) {
+            ativoSelect.innerHTML = '<option value="">Selecione um Ativo</option>';
+            ativoSelect.disabled = true;
+            return;
+        }
+        
+        fetch(`{% url 'dadosb3:get_tickers' %}?segmento=${encodeURIComponent(seg)}`)
+            .then(res => res.json())
+            .then(data => {
+                ativoSelect.innerHTML = '<option value="">Selecione um Ativo</option>';
+                data.tickers.forEach(ticker => {
+                    const opt = document.createElement('option');
+                    opt.value = ticker;
+                    opt.innerText = ticker;
+                    ativoSelect.appendChild(opt);
+                });
+                ativoSelect.disabled = false;
+            });
+    });
+
+    ativoSelect.addEventListener('change', function() {
+        const ticker = this.value;
+        if (!ticker) return;
+        
+        fetch(`{% url 'dadosb3:get_chart_data' %}?ticker=${encodeURIComponent(ticker)}`)
+            .then(res => res.json())
+            .then(data => {
+                renderChart(ticker, data.data);
+            });
+    });
+
+    function renderChart(ticker, data) {
+        const chartDom = document.getElementById('main-chart');
+        const tableContainer = document.getElementById('tableContainer');
+        const tableTicker = document.getElementById('tableTicker');
+        const dataTableBody = document.getElementById('dataTableBody');
+
+        if (!myChart) {
+            myChart = echarts.init(chartDom, 'vintage');
+        }
+        
+        // Populate Table
+        tableTicker.innerText = ticker;
+        dataTableBody.innerHTML = '';
+        
+        if (data.length === 0) {
+            tableContainer.classList.remove('hidden');
+            const row = document.createElement('tr');
+            row.innerHTML = `<td colspan="6" class="text-center py-4 text-red-500">Nenhum dado de negócio encontrado para este ativo. Certifique-se de ter feito o upload do arquivo de "Negócios Consolidados".</td>`;
+            dataTableBody.appendChild(row);
+        } else {
+            tableContainer.classList.remove('hidden');
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="py-1 px-4 border-b text-center">${item.data}</td>
+                    <td class="py-1 px-4 border-b text-center">${item.abertura.toFixed(2)}</td>
+                    <td class="py-1 px-4 border-b text-center">${item.fechamento.toFixed(2)}</td>
+                    <td class="py-1 px-4 border-b text-center">${item.minimo.toFixed(2)}</td>
+                    <td class="py-1 px-4 border-b text-center">${item.maximo.toFixed(2)}</td>
+                    <td class="py-1 px-4 border-b text-center">${item.volume.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                `;
+                dataTableBody.appendChild(row);
+            });
+        }
+
+        // Transform data for the chart
+        const categoryData = data.map(item => item.data);
+        // ECharts candlestick expects: [open, close, lowest, highest]
+        const values = data.map(item => [item.abertura, item.fechamento, item.minimo, item.maximo]);
+        
+        // volumes: [index, valor, sinal] onde sinal 1 = alta, -1 = baixa
+        const volumes = data.map((item, i) => [
+            i,
+            item.volume,
+            item.fechamento > item.abertura ? 1 : -1
+        ]);
+
+        const colors = {
+            down: '#d87a80',        // Vermelho vintage
+            up: '#2ec7c9',          // Verde/Azul vintage
+            volNeutral: 'rgba(182, 162, 222, 0.4)',
+            axis: '#008acd'
+        };
+
+        const option = {
+            animation: true,
+            title: { text: ticker, left: 'center' },
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'cross' },
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                borderWidth: 1,
+                borderColor: '#ccc'
+            },
+            axisPointer: {
+                link: [{ xAxisIndex: 'all' }],
+                label: { backgroundColor: '#777' }
+            },
+            grid: [
+                { left: '80px', right: '40px', height: '63%', top: '10%' },
+                { left: '80px', right: '40px', top: '78%', height: '12%' }
+            ],
+            xAxis: [
+                {
+                    type: 'category',
+                    data: categoryData,
+                    boundaryGap: false,
+                    axisLine: { lineStyle: { color: colors.axis } },
+                    splitLine: { show: false }
+                },
+                {
+                    type: 'category',
+                    gridIndex: 1,
+                    data: categoryData,
+                    boundaryGap: false,
+                    axisLabel: { show: false },
+                    axisTick: { show: false }
+                }
+            ],
+            yAxis: [
+                {
+                    scale: true,
+                    offset: 10,
+                    axisLabel: {
+                        formatter: val => val.toFixed(2),
+                        margin: 12
+                    },
+                    splitLine: { show: true, lineStyle: { type: 'dashed', color: '#ddd' } }
+                },
+                {
+                    scale: true,
+                    gridIndex: 1,
+                    splitNumber: 2,
+                    axisLabel: { show: false },
+                    axisLine: { show: false },
+                    axisTick: { show: false },
+                    splitLine: { show: false }
+                }
+            ],
+            dataZoom: [
+                { type: 'inside', xAxisIndex: [0, 1], start: 0, end: 100 },
+                { type: 'slider', xAxisIndex: [0, 1], top: '92%', start: 0, end: 100 }
+            ],
+            series: [
+                {
+                    name: 'Preço',
+                    type: 'candlestick',
+                    data: values,
+                    itemStyle: {
+                        color: colors.up,
+                        color0: colors.down,
+                        borderColor: colors.up,
+                        borderColor0: colors.down,
+                        opacity: 0.85
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            opacity: 1,
+                            shadowBlur: 10,
+                            shadowColor: 'rgba(0,0,0,0.2)'
+                        }
+                    }
+                },
+                {
+                    name: 'Volume',
+                    type: 'bar',
+                    xAxisIndex: 1,
+                    yAxisIndex: 1,
+                    data: volumes.map(v => v[1]),
+                    itemStyle: {
+                        color: colors.volNeutral
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            color: function (params) {
+                                const signal = volumes[params.dataIndex][2];
+                                return signal === 1 ? colors.up : colors.down;
+                            },
+                            opacity: 1
+                        }
+                    }
+                }
+            ]
+        };
+
+        myChart.setOption(option, true);
+    }
+
+    window.addEventListener('resize', () => {
+        if (myChart) {
+            myChart.resize();
+        }
+    });
+</script>
+{% endblock %}

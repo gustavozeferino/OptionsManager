@@ -9,4 +9,5 @@ urlpatterns = [
     path('', include('core.urls')),
     path('users/', include('users.urls')),
     path('trading/', include('trading.urls')),
+    path('dadosb3/', include('dadosb3.urls')),
 ]

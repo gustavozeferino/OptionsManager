@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'users',
     'core',
     'trading',
+    'dadosb3',
 ]
 
 MIDDLEWARE = [
@@ -78,8 +79,13 @@ WSGI_APPLICATION = 'optionsmanager.wsgi.application'
 DATABASES = {
     'default': dj_database_url.config(
         default=config('DATABASE_URL')
+    ),
+    'b3_data': dj_database_url.config(
+        default=config('B3_DATABASE_URL', default='postgresql://postgres:admin123@127.0.0.1:5432/b3_data_db')
     )
 }
+
+DATABASE_ROUTERS = ['dadosb3.routers.B3DataRouter']
 
 
 # Custom User Model

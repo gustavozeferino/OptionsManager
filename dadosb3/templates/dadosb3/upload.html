@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mx-auto mt-8">
+    <h2 class="text-2xl font-bold mb-4">Upload de Dados B3</h2>
+    
+    <div class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
+        <form id="uploadForm" enctype="multipart/form-data">
+            {% csrf_token %}
+            
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="file_type">
+                    Tipo de Arquivo
+                </label>
+                <select id="file_type" name="file_type" class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    <option value="cadastro">Cadastro de Instrumentos</option>
+                    <option value="negocios">Negócios Consolidados do Pregão</option>
+                    <option value="posicoes">Posições em Aberto</option>
+                </select>
+            </div>
+            
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="file">
+                    Arquivo CSV
+                </label>
+                <input type="file" id="file" name="file" accept=".csv" class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            </div>
+            
+            <div class="flex items-center justify-between">
+                <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                    Iniciar Upload
+                </button>
+            </div>
+        </form>
+        
+        <div id="progressContainer" class="mt-8 hidden">
+            <h3 class="text-lg font-semibold mb-2">Progresso do Processamento</h3>
+            <div class="w-full bg-gray-200 rounded-full h-4 dark:bg-gray-700">
+              <div id="progressBar" class="bg-blue-600 h-4 rounded-full" style="width: 0%"></div>
+            </div>
+            <p id="progressText" class="text-sm mt-2 text-gray-600">0%</p>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    
+    progressContainer.classList.remove('hidden');
+    progressBar.style.width = '0%';
+    progressText.innerText = 'Iniciando...';
+    
+    fetch('{% url "dadosb3:upload" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.task_id) {
+            checkProgress(data.task_id);
+        }
+    })
+    .catch(error => {
+        progressText.innerText = 'Erro ao enviar arquivo.';
+        console.error('Error:', error);
+    });
+    
+    function checkProgress(taskId) {
+        fetch(`/dadosb3/upload/progress/${taskId}/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    progressText.innerText = 'Erro no processamento: ' + data.error;
+                    progressBar.classList.remove('bg-blue-600');
+                    progressBar.classList.add('bg-red-600');
+                } else {
+                    const progress = data.progress;
+                    progressBar.style.width = `${progress}%`;
+                    progressText.innerText = `${progress}% concluído`;
+                    
+                    if (progress < 100) {
+                        setTimeout(() => checkProgress(taskId), 1000);
+                    } else {
+                        progressText.innerText = 'Processamento concluído com sucesso!';
+                        progressBar.classList.remove('bg-blue-600');
+                        progressBar.classList.add('bg-green-600');
+                    }
+                }
+            })
+            .catch(error => console.error('Error:', error));
+    }
+});
+</script>
+{% endblock %}
