@@ -77,3 +77,9 @@ python manage.py test
 * Implementar importação via tabela de ordens do profit e
 * tabela gerada no site da B3
 
+Scripts de Linha de Comando (Management Commands):
+
+Comandos para execução via terminal, cada um com barra de progresso e impressão do resumo ao final:
+python manage.py upload_cadastro "caminho/do/arquivo.csv"
+python manage.py upload_negocios "caminho/do/arquivo.csv"
+python manage.py upload_posicoes "caminho/do/arquivo.csv"

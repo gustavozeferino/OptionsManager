@@ -39,6 +39,11 @@
             </div>
             <p id="progressText" class="text-sm mt-2 text-gray-600">0%</p>
         </div>
+
+        <div id="summaryContainer" class="mt-8 hidden">
+            <h3 class="text-lg font-semibold mb-2">Resumo do Processamento</h3>
+            <div id="summaryText" class="bg-gray-100 p-4 rounded text-sm overflow-auto max-h-96"></div>
+        </div>
     </div>
 </div>
 
@@ -50,9 +55,14 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     const progressContainer = document.getElementById('progressContainer');
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
+    const summaryContainer = document.getElementById('summaryContainer');
+    const summaryText = document.getElementById('summaryText');
     
     progressContainer.classList.remove('hidden');
+    summaryContainer.classList.add('hidden');
     progressBar.style.width = '0%';
+    progressBar.classList.remove('bg-green-600', 'bg-red-600');
+    progressBar.classList.add('bg-blue-600');
     progressText.innerText = 'Iniciando...';
     
     fetch('{% url "dadosb3:upload" %}', {
@@ -92,6 +102,11 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
                         progressText.innerText = 'Processamento concluído com sucesso!';
                         progressBar.classList.remove('bg-blue-600');
                         progressBar.classList.add('bg-green-600');
+                        
+                        if (data.summary) {
+                            summaryContainer.classList.remove('hidden');
+                            summaryText.innerHTML = data.summary;
+                        }
                     }
                 }
             })

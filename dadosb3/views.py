@@ -5,6 +5,7 @@ import math
 import logging
 import traceback
 import os
+import re
 from decimal import Decimal
 from datetime import datetime
 from django.shortcuts import render
@@ -14,7 +15,7 @@ from django.core.cache import cache
 from django.core.files.storage import FileSystemStorage
 from django.conf import settings
 import unicodedata
-from .models import Instrumento, NegocioDiario, PosicaoAberta, LogProcessamento
+from .models import Instrumento, NegocioDiario, PosicaoAberta, LogProcessamento, InstrumentoAtualizacao
 
 def slugify(text):
     return "".join(c for c in unicodedata.normalize('NFD', str(text)) if unicodedata.category(c) != 'Mn').lower().strip()
@@ -76,7 +77,7 @@ def ingest_cadastro(file_path, task_id, filename):
     try:
         total_lines = count_lines(file_path)
         if total_lines <= 0: total_lines = 1
-        chunksize = 1000
+        chunksize = 500
         processed_lines = 0
         
         # Detecção dinâmica da linha de cabeçalho
@@ -90,33 +91,123 @@ def ingest_cadastro(file_path, task_id, filename):
                         break
         except: pass
         
+        # Extração da data pelo nome do arquivo (dd-mm-aaaa)
+        date_ref = None
+        match = re.search(r'(\d{2})-(\d{2})-(\d{4})', filename)
+        if match:
+            try:
+                date_ref = datetime.strptime(match.group(0), '%d-%m-%Y').date()
+            except:
+                pass
+
+        summary = {"novos": 0, "alterados": 0, "detalhes": []}
+
         for chunk in pd.read_csv(file_path, sep=';', skiprows=skip, encoding='utf-8-sig', chunksize=chunksize, dtype=str):
             cols = chunk.columns
-            instances = []
             for _, row in chunk.iterrows():
                 ticker = str(get_val(row, cols, ['instrumento', 'financeiro']) or '').strip()
-                if not ticker or ticker == 'nan': continue
+                isin = str(get_val(row, cols, ['codigo', 'isin']) or '').strip()
                 
-                instances.append(Instrumento(
-                    ticker=ticker,
-                    ativo_objeto=str(get_val(row, cols, ['ativo']) or '').strip()[:100],
-                    descricao=str(get_val(row, cols, ['descricao', 'ativo']) or '').strip()[:255],
-                    segmento=str(get_val(row, cols, ['segmento']) or '').strip()[:100],
-                    mercado=str(get_val(row, cols, ['mercado']) or '').strip()[:100],
-                    categoria=str(get_val(row, cols, ['categoria']) or '').strip()[:100],
-                    data_expiracao=parse_date(get_val(row, cols, ['data', 'expiracao'])),
-                    data_inicio_negocio=parse_date(get_val(row, cols, ['data', 'inicio', 'negocio'])),
-                    isin=str(get_val(row, cols, ['codigo', 'isin']) or '').strip()[:100],
-                    strike=parse_decimal(get_val(row, cols, ['preco', 'exercicio'])),
-                    estilo_opcao=str(get_val(row, cols, ['estilo', 'opcao']) or '').strip()[:100],
-                    nome_instituicao=str(get_val(row, cols, ['nome', 'instituicao']) or '').strip()[:255],
-                ))
-            if instances:
-                Instrumento.objects.bulk_create(instances, ignore_conflicts=True)
-            
+                if not isin or isin == 'nan' or isin == '':
+                    continue
+                
+                if not ticker or ticker == 'nan':
+                    continue
+
+                isin = isin[:12]
+                
+                # Dados do arquivo (sem o campo data)
+                data_row = {
+                    'ticker': ticker,
+                    'ativo_objeto': str(get_val(row, cols, ['ativo']) or '').strip()[:100],
+                    'descricao': str(get_val(row, cols, ['descricao', 'ativo']) or '').strip(),
+                    'segmento': str(get_val(row, cols, ['segmento']) or '').strip()[:100],
+                    'mercado': str(get_val(row, cols, ['mercado']) or '').strip()[:100],
+                    'categoria': str(get_val(row, cols, ['categoria']) or '').strip()[:100],
+                    'data_expiracao': parse_date(get_val(row, cols, ['data', 'expiracao'])),
+                    'data_inicio_negocio': parse_date(get_val(row, cols, ['data', 'inicio', 'negocio'])),
+                    'data_fim_negocio': parse_date(get_val(row, cols, ['data', 'fim', 'negocio'])),
+                    'cfi': str(get_val(row, cols, ['codigo', 'cfi']) or '').strip()[:100],
+                    'tipo_opcao': str(get_val(row, cols, ['tipo', 'opcao']) or '').strip()[:10],
+                    'lote_alocacao': parse_int(get_val(row, cols, ['tamanho', 'lote', 'alocacao'])),
+                    'moeda': str(get_val(row, cols, ['moeda', 'negociada']) or '').strip()[:50],
+                    'tipo_entrega': str(get_val(row, cols, ['tipo', 'entrega']) or '').strip()[:50],
+                    'strike': parse_decimal(get_val(row, cols, ['preco', 'exercicio'])),
+                    'estilo_opcao': str(get_val(row, cols, ['estilo', 'opcao']) or '').strip()[:10],
+                    'ind_premio_antecipado': (str(get_val(row, cols, ['indicador', 'premio', 'antecipado']) or '').strip().lower() in ['s', 'sim', 'true', '1']),
+                    'id_distribuicao': str(get_val(row, cols, ['identificador', 'distribuicao']) or '').strip()[:50],
+                    'fator_preco': parse_int(get_val(row, cols, ['fator', 'preco'])),
+                    'dias_liquidacao': parse_int(get_val(row, cols, ['dias', 'liquidacao'])),
+                    'tipo_serie': str(get_val(row, cols, ['tipo', 'serie']) or '').strip()[:50],
+                    'ind_protecao': (str(get_val(row, cols, ['indicador', 'protecao']) or '').strip().lower() in ['s', 'sim', 'true', '1']),
+                    'ind_exercicio_automatico': (str(get_val(row, cols, ['exercicio', 'automatico']) or '').strip().lower() in ['s', 'sim', 'true', '1']),
+                    'especificacao': str(get_val(row, cols, ['codigo', 'especificacao']) or '').strip()[:100],
+                    'nome_instituicao': str(get_val(row, cols, ['nome', 'instituicao']) or '').strip()[:255],
+                    'data_evento_corp': parse_date(get_val(row, cols, ['data', 'inicio', 'evento', 'corporativo'])),
+                    'tipo_custodia': str(get_val(row, cols, ['tipo', 'tratamento', 'custodia']) or '').strip()[:100],
+                    'capital_social': parse_decimal(get_val(row, cols, ['capital', 'social'])),
+                    'nivel_governanca': str(get_val(row, cols, ['nivel', 'governanca', 'corporativa']) or '').strip()[:100],
+                }
+
+                obj, created = Instrumento.objects.get_or_create(isin=isin, defaults={**data_row, 'data': date_ref})
+                
+                if created:
+                    summary["novos"] += 1
+                    summary["detalhes"].append({"tipo": "novo", "ticker": ticker, "isin": isin})
+                else:
+                    if date_ref and obj.data and date_ref <= obj.data:
+                        continue
+                    
+                    if not date_ref and obj.data:
+                        continue
+                    
+                    changed = False
+                    changes = []
+                    for field, value in data_row.items():
+                        old_val = getattr(obj, field)
+                        if str(old_val) != str(value):
+                            InstrumentoAtualizacao.objects.create(
+                                data_arquivo=date_ref,
+                                isin=isin,
+                                coluna=field,
+                                valor_antigo=str(old_val),
+                                valor_novo=str(value)
+                            )
+                            setattr(obj, field, value)
+                            changed = True
+                            changes.append({"campo": field, "anterior": str(old_val), "novo": str(value)})
+                    
+                    if changed:
+                        obj.data = date_ref
+                        obj.save()
+                        summary["alterados"] += 1
+                        summary["detalhes"].append({"tipo": "alterado", "ticker": ticker, "isin": isin, "mudancas": changes})
+
             processed_lines += len(chunk)
-            cache.set(f'task_{task_id}', min(100, math.floor((processed_lines / total_lines) * 100)), timeout=3600)
+            cache.set(f'task_{task_id}', min(99, math.floor((processed_lines / total_lines) * 100)), timeout=3600)
             
+        # Formata para Web (HTML)
+        html_parts = [f"<div class='space-y-4'><p class='text-lg font-bold'>Resumo do Upload: {summary['novos']} novos, {summary['alterados']} alterados.</p>"]
+        for d in summary["detalhes"]:
+            if d["tipo"] == "novo":
+                html_parts.append(f"<p class='text-green-600 font-bold'>Novo: {d['ticker']} ({d['isin']})</p>")
+            else:
+                rows = "".join([f"<tr><td class='border px-2 py-1'>{m['campo']}</td><td class='border px-2 py-1'>{m['anterior']}</td><td class='border px-2 py-1'>{m['novo']}</td></tr>" for m in d["mudancas"]])
+                html_parts.append(f"<div class='mb-4'><p class='font-bold text-blue-600'>Alterado: {d['ticker']} ({d['isin']})</p><table class='table-auto border-collapse w-full text-xs'><thead><tr class='bg-gray-200'><th class='border px-2 py-1'>Campo</th><th class='border px-2 py-1'>Anterior</th><th class='border px-2 py-1'>Novo</th></tr></thead><tbody>{rows}</tbody></table></div>")
+        html_parts.append("</div>")
+        cache.set(f'task_{task_id}_summary', "".join(html_parts), timeout=3600)
+        
+        # Formata para Console (Plain Text)
+        txt_parts = [f"Resumo do Upload: {summary['novos']} novos, {summary['alterados']} alterados."]
+        for d in summary["detalhes"]:
+            if d["tipo"] == "novo":
+                txt_parts.append(f"Novo: {d['ticker']} ({d['isin']})")
+            else:
+                txt_parts.append(f"Alterado: {d['ticker']} ({d['isin']})")
+                for m in d["mudancas"]:
+                    txt_parts.append(f"  - {m['campo']}: {m['anterior']} -> {m['novo']}")
+        cache.set(f'task_{task_id}_summary_txt', "\n".join(txt_parts), timeout=3600)
+
         logger.info(f"Sucesso ao processar arquivo de cadastro: {filename}")
         LogProcessamento.objects.create(nome_arquivo=filename, status='Sucesso', descricao_falha='-')
         cache.set(f'task_{task_id}', 100, timeout=3600)
@@ -153,19 +244,42 @@ def ingest_negocios(file_path, task_id, filename):
                 dt = parse_date(get_val(row, cols, ['data', 'negocio']))
                 ticker = str(get_val(row, cols, ['instrumento', 'financeiro']) or '').strip()
                 isin = str(get_val(row, cols, ['codigo', 'isin']) or '').strip()
-                if not dt or not ticker or not isin or ticker == 'nan': continue
                 
+                # Validação: isin deve estar preenchido
+                if not isin or isin == 'nan' or isin == '':
+                    continue
+                
+                if not dt or not ticker or ticker == 'nan': continue
+                
+                vol = parse_decimal(get_val(row, cols, ['volume', 'financeiro']))
+                qtd_cont = parse_int(get_val(row, cols, ['quantidade', 'contrato']))
+                vwap_val = None
+                if vol and qtd_cont and qtd_cont > 0:
+                    vwap_val = vol / Decimal(qtd_cont)
+
                 instances.append(NegocioDiario(
                     data_pregao=dt,
                     ticker=ticker,
-                    isin=isin,
+                    isin=isin[:12],
+                    segmento=str(get_val(row, cols, ['segmento']) or '').strip()[:100],
                     preco_abertura=parse_decimal(get_val(row, cols, ['preco', 'abertura'])),
                     preco_minimo=parse_decimal(get_val(row, cols, ['preco', 'minimo'])),
                     preco_maximo=parse_decimal(get_val(row, cols, ['preco', 'maximo'])),
                     preco_medio=parse_decimal(get_val(row, cols, ['preco', 'medio'])),
                     preco_fechamento=parse_decimal(get_val(row, cols, ['preco', 'fechamento'])),
+                    oscilacao=parse_decimal(get_val(row, cols, ['oscilacao'])),
+                    ajuste=parse_decimal(get_val(row, cols, ['ajuste'])),
+                    ajuste_referencia=parse_decimal(get_val(row, cols, ['ajuste', 'referencia'])),
+                    ajuste_anterior=parse_decimal(get_val(row, cols, ['ajuste', 'anterior'])),
+                    preco_referencia=parse_decimal(get_val(row, cols, ['preco', 'referencia'])),
+                    variacao=parse_decimal(get_val(row, cols, ['variacao'])),
+                    valor_ajuste_contrato=parse_decimal(get_val(row, cols, ['valor', 'ajuste', 'contrato'])),
+                    bid=parse_decimal(get_val(row, cols, ['ultima', 'oferta', 'compra'])),
+                    ask=parse_decimal(get_val(row, cols, ['ultima', 'oferta', 'venda'])),
                     qtd_negocios=parse_int(get_val(row, cols, ['quantidade', 'negocio'])),
-                    volume_financeiro=parse_decimal(get_val(row, cols, ['volume', 'financeiro'])),
+                    qtd_contratos=qtd_cont,
+                    volume_financeiro=vol,
+                    vwap=vwap_val,
                 ))
             if instances:
                 NegocioDiario.objects.bulk_create(instances, ignore_conflicts=True)
@@ -190,6 +304,15 @@ def ingest_posicoes(file_path, task_id, filename):
         chunksize = 1000
         processed_lines = 0
         
+        # Extração da data pelo nome do arquivo (dd-mm-aaaa)
+        date_ref = None
+        match = re.search(r'(\d{2})-(\d{2})-(\d{4})', filename)
+        if match:
+            try:
+                date_ref = datetime.strptime(match.group(0), '%d-%m-%Y').date()
+            except:
+                pass
+
         # Detecção dinâmica da linha de cabeçalho
         skip = 0
         try:
@@ -207,15 +330,33 @@ def ingest_posicoes(file_path, task_id, filename):
             for _, row in chunk.iterrows():
                 ticker = str(get_val(row, cols, ['instrumento', 'financeiro']) or '').strip()
                 isin = str(get_val(row, cols, ['codigo', 'isin']) or '').strip()
-                if not ticker or not isin or ticker == 'nan': continue
+                
+                # Validação: isin deve estar preenchido
+                if not isin or isin == 'nan' or isin == '':
+                    continue
+                
+                if not ticker or ticker == 'nan':
+                    continue
                 
                 instances.append(PosicaoAberta(
+                    data=date_ref,
                     ticker=ticker,
-                    isin=isin,
+                    isin=isin[:12],
+                    ativo_objeto=str(get_val(row, cols, ['ativo']) or '').strip()[:100],
                     codigo_expiracao=str(get_val(row, cols, ['codigo', 'expiracao']) or '').strip()[:100],
+                    segmento=str(get_val(row, cols, ['segmento']) or '').strip()[:100],
                     contratos_abertos=parse_int(get_val(row, cols, ['contratos', 'aberto'])),
+                    variacao_abertos=parse_int(get_val(row, cols, ['variacao', 'contratos', 'aberto'])),
+                    id_distribuicao=str(get_val(row, cols, ['identificador', 'distribuicao']) or '').strip()[:50],
                     qtd_coberta=parse_int(get_val(row, cols, ['quantidade', 'coberta'])),
+                    posicoes_bloqueadas=parse_int(get_val(row, cols, ['total', 'posicoes', 'bloqueadas'])),
                     qtd_descoberta=parse_int(get_val(row, cols, ['quantidade', 'descoberta'])),
+                    total_posicoes=parse_int(get_val(row, cols, ['total', 'posicoes'])),
+                    qtd_tomadores=parse_int(get_val(row, cols, ['quantidade', 'tomadores'])),
+                    qtd_doadores=parse_int(get_val(row, cols, ['quantidade', 'doadores'])),
+                    qtd_atual=parse_int(get_val(row, cols, ['quantidade', 'atual'])),
+                    contratos_travados=parse_int(get_val(row, cols, ['contratos', 'travados'])),
+                    contratos_transferidos=parse_int(get_val(row, cols, ['contratos', 'baixados', 'transferencia'])),
                     preco_termo=parse_decimal(get_val(row, cols, ['preco', 'termo'])),
                 ))
             if instances:
@@ -269,9 +410,10 @@ def upload_view(request):
 def upload_progress(request, task_id):
     progress = cache.get(f'task_{task_id}', 0)
     error = cache.get(f'task_{task_id}_error', None)
+    summary = cache.get(f'task_{task_id}_summary', None)
     if error:
         return JsonResponse({'progress': progress, 'error': error})
-    return JsonResponse({'progress': progress})
+    return JsonResponse({'progress': progress, 'summary': summary})
 
 @login_required
 @user_passes_test(is_admin)
