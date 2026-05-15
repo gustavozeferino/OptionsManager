@@ -47,7 +47,7 @@ class InstrumentoAtualizacao(models.Model):
     class Meta:
         db_table = 'instrumento_atualizacao'
 
-class NegocioDiario(models.Model):
+class BoletimNegocioDiario(models.Model):
     data_pregao = models.DateField()
     ticker = models.CharField(max_length=100, db_index=True)
     isin = models.CharField(max_length=12, db_index=True)
@@ -72,8 +72,58 @@ class NegocioDiario(models.Model):
     vwap = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
 
     class Meta:
-        db_table = 'negocio_diario'
+        db_table = 'boletim_negocio_diario'
         unique_together = ('data_pregao', 'ticker', 'isin')
+
+class CotacaoHistorica(models.Model):
+    tipreg = models.CharField(max_length=2, null=True, blank=True)
+    dtpreg = models.DateField()
+    codbdi = models.CharField(max_length=2, null=True, blank=True)
+    codneg = models.CharField(max_length=100, db_index=True)
+    tpmerc = models.CharField(max_length=3, null=True, blank=True)
+    nomres = models.CharField(max_length=100, null=True, blank=True)
+    especi = models.CharField(max_length=100, null=True, blank=True)
+    prazot = models.CharField(max_length=3, null=True, blank=True)
+    modref = models.CharField(max_length=4, null=True, blank=True)
+    preabe = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    premax = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    premin = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    premed = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    preult = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    preofc = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    preofv = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    totneg = models.IntegerField(null=True, blank=True)
+    quatot = models.BigIntegerField(null=True, blank=True)
+    voltot = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    preexe = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    indopc = models.CharField(max_length=1, null=True, blank=True)
+    datven = models.DateField(null=True, blank=True)
+    fatcot = models.CharField(max_length=7, null=True, blank=True)
+    ptoexe = models.CharField(max_length=13, null=True, blank=True)
+    codisi = models.CharField(max_length=12, db_index=True)
+    dismes = models.CharField(max_length=3, null=True, blank=True)
+
+    class Meta:
+        db_table = 'cotacao_historica'
+        unique_together = ('dtpreg', 'codneg')
+
+class NegocioDiario(models.Model):
+    data_pregao = models.DateField()
+    ticker = models.CharField(max_length=100, db_index=True)
+    isin = models.CharField(max_length=12, db_index=True)
+    preco_abertura = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    preco_minimo = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    preco_maximo = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    preco_fechamento = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    preco_vwap = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    qtd_negocios = models.BigIntegerField(null=True, blank=True)
+    qtd_contratos = models.BigIntegerField(null=True, blank=True)
+    volume_financeiro = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    segmento = models.CharField(max_length=100, null=True, blank=True)
+
+    class Meta:
+        db_table = 'negocio_diario'
+        unique_together = ('data_pregao', 'isin')
 
 class PosicaoAberta(models.Model):
     data = models.DateField(null=True, blank=True)

@@ -230,7 +230,6 @@ class HistoricoPreco(models.Model):
     maximo = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     minimo = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     fechamento = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
-    ajuste = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     
     # Dados de volume
     quantidade_negocios = models.IntegerField(default=0)

@@ -394,3 +394,58 @@ def get_ativo_stats(ticker):
     stats['var_30d'] = calc_var(h_atual.fechamento, h_30d.fechamento if h_30d else None)
     
     return stats
+
+def sync_precos_negocios_b3():
+    """
+    Sincroniza os dados da tabela dadosb3.NegocioDiario para a tabela core.HistoricoPreco.
+    Cria entradas que não existem em HistoricoPreco baseando-se no par (isin, data_pregao).
+    """
+    from dadosb3.models import NegocioDiario
+    from .models import AtivoB3, HistoricoPreco
+    
+    stats = {'novos': 0, 'pulados': 0, 'erros': 0}
+    
+    # Carregamos NegocioDiario
+    negocios = NegocioDiario.objects.all()
+    
+    # Mapeamento ISIN -> AtivoB3 para performance
+    mapa_ativos = {a.codigo_isin: a for a in AtivoB3.objects.all()}
+    
+    # Cache do que já existe em HistoricoPreco (ativo_pk, data_pregao)
+    existentes = set(HistoricoPreco.objects.values_list('ativo_id', 'data_pregao'))
+    
+    novos_historicos = []
+    
+    with transaction.atomic():
+        for neg in negocios:
+            ativo = mapa_ativos.get(neg.isin)
+            if not ativo:
+                # Ativo não cadastrado no core.AtivoB3
+                continue
+                
+            if (ativo.codigo_isin, neg.data_pregao) in existentes:
+                stats['pulados'] += 1
+                continue
+                
+            novos_historicos.append(HistoricoPreco(
+                ativo=ativo,
+                data_pregao=neg.data_pregao,
+                abertura=neg.preco_abertura or 0,
+                maximo=neg.preco_maximo or 0,
+                minimo=neg.preco_minimo or 0,
+                fechamento=neg.preco_fechamento or 0,
+                quantidade_negocios=neg.qtd_negocios or 0,
+                volume_financeiro=neg.volume_financeiro or 0,
+                quantidade_contratos=neg.qtd_contratos or 0
+            ))
+            
+            if len(novos_historicos) >= 500:
+                HistoricoPreco.objects.bulk_create(novos_historicos, ignore_conflicts=True)
+                stats['novos'] += len(novos_historicos)
+                novos_historicos = []
+                
+        if novos_historicos:
+            HistoricoPreco.objects.bulk_create(novos_historicos, ignore_conflicts=True)
+            stats['novos'] += len(novos_historicos)
+            
+    return stats

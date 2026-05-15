@@ -4,6 +4,10 @@ from .models import AtivoMonitorado
 from .models import AcessoLog
 from django import forms
 from .models import HistoricoPreco, HistoricoImportacao
+from django.urls import path
+from django.shortcuts import redirect
+from django.contrib import messages
+from .services import sync_precos_negocios_b3
 
 class AtivoB3Form(forms.ModelForm):
     class Meta:
@@ -67,7 +71,7 @@ class AcessoLogAdmin(admin.ModelAdmin):
 @admin.register(HistoricoPreco)
 class HistoricoPrecoAdmin(admin.ModelAdmin):
     # Exibe as colunas principais na lista
-    list_display = ('get_ticker', 'data_pregao', 'fechamento', 'ajuste', 'quantidade_negocios', 'volume_financeiro')
+    list_display = ('get_ticker', 'data_pregao', 'fechamento', 'quantidade_negocios', 'volume_financeiro')
     
     # Filtros laterais para facilitar a análise
     list_filter = ('data_pregao', 'ativo__ativo_objeto')
@@ -77,6 +81,20 @@ class HistoricoPrecoAdmin(admin.ModelAdmin):
     
     # Ordenação: mais recente primeiro
     ordering = ('-data_pregao', 'ativo__ticker')
+
+    change_list_template = "admin/core/historicopreco/change_list.html"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('sync-b3/', self.admin_site.admin_view(self.sync_b3), name='sync-b3'),
+        ]
+        return custom_urls + urls
+
+    def sync_b3(self, request):
+        stats = sync_precos_negocios_b3()
+        self.message_user(request, f"Sincronização concluída: {stats['novos']} novos registros criados.")
+        return redirect("..")
 
     # Função auxiliar para mostrar o ticker do ativo relacionado na listagem
     @admin.display(ordering='ativo__ticker', description='Ticker')

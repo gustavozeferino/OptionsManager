@@ -398,26 +398,37 @@ def upload_precos(request):
             # 3. FILTRAGEM EM MEMÓRIA (O segredo da performance)
             print("[2/4] Filtrando ativos monitorados...")
             # Apenas ativos que estejam relacionados aos Ativos Monitorados ativos
-            ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True)
-            ativos_no_banco = AtivoB3.objects.filter(ativo_objeto__in=ativos_monitorados).values_list('codigo_isin', flat=True)
-            set_isins = set(ativos_no_banco)
+            ativos_monitorados = set(AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True))
+            
+            # Localiza a coluna do Ativo Objeto (Underlying) para filtrar sem barrar ISIN
+            col_ativo_obj = find_column(['Ativo', 'Ativo Objeto', 'Ticker Objeto', 'Instrumento Objeto', 'UNDERLYING', 'Asst'], df.columns)
             
             # Filtro de Segmento
             col_segmento = find_column(['Segmento', 'Segmento de Mercado', 'SEGMENTO'], df.columns)
             if col_segmento:
-                segmentos_permitidos = ['CASH', 'EQUITY CALL', 'EQUITY PUT']
+                segmentos_permitidos = ['CASH', 'EQUITY CALL', 'EQUITY PUT', 'EQUITY']
                 df[col_segmento] = df[col_segmento].astype(str).str.strip().str.upper()
                 df = df[df[col_segmento].isin(segmentos_permitidos)]
 
             # Garantimos que a coluna ISIN seja string e sem espaços
             df[coluna_isin] = df[coluna_isin].astype(str).str.strip()
             
-            df_filtrado = df[df[coluna_isin].isin(set_isins)].copy()
+            if col_ativo_obj:
+                print(f"--- Filtrando por Ativo Objeto usando coluna '{col_ativo_obj}'")
+                df[col_ativo_obj] = df[col_ativo_obj].astype(str).str.strip().str.upper()
+                df_filtrado = df[df[col_ativo_obj].isin(ativos_monitorados)].copy()
+            else:
+                # Fallback: se não achar a coluna do ativo objeto, usa a lógica anterior de ISINs conhecidos
+                print("--- Coluna de Ativo Objeto não encontrada. Usando filtro por ISINs existentes.")
+                ativos_no_banco = AtivoB3.objects.filter(ativo_objeto__in=ativos_monitorados).values_list('codigo_isin', flat=True)
+                set_isins = set(ativos_no_banco)
+                df_filtrado = df[df[coluna_isin].isin(set_isins)].copy()
+            
             total_para_gravar = len(df_filtrado)
             
             if total_para_gravar == 0:
-                print("[!] AVISO: Nenhum ativo do banco encontrado no arquivo de 1 milhão de linhas.")
-                messages.warning(request, "O arquivo foi lido, mas nenhum ISIN coincide com seus ativos cadastrados.")
+                print(f"[!] AVISO: Nenhum ativo monitorado encontrado no arquivo de {len(df):,} linhas.")
+                messages.warning(request, f"O arquivo foi lido ({len(df):,} linhas), mas nenhum ativo monitorado ({', '.join(ativos_monitorados)}) foi identificado. Verifique se as colunas estão corretas.")
                 return redirect('core:upload_precos')
 
             # 4. GRAVAÇÃO ATÔMICA
@@ -428,7 +439,6 @@ def upload_precos(request):
             col_maximo = find_column(['Preço máximo', 'Máximo', 'MAXIMO', 'MAX', 'MAX.'], df.columns)
             col_minimo = find_column(['Preço mínimo', 'Mínimo', 'MINIMO', 'MIN', 'MIN.'], df.columns)
             col_fechamento = find_column(['Preço de fechamento', 'Fechamento', 'FECH', 'FECH.', 'Último', 'ULTIMO', 'ULT.', 'PRECO FECH'], df.columns)
-            col_ajuste = find_column(['Ajuste', 'AJUST.'], df.columns)
             col_qtd_neg = find_column(['Quantidade de negócios', 'Negócios', 'NEGOCIOS', 'NEGOC.'], df.columns)
             col_vol_fin = find_column(['Volume financeiro', 'Volume', 'VOL.', 'VOL FIN'], df.columns)
             col_qtd_contratos = find_column(['Quantidade de contratos', 'Contratos', 'QTD. CONTRATOS', 'QTD CONTRATOS'], df.columns)
@@ -444,14 +454,37 @@ def upload_precos(request):
 
             with transaction.atomic():
                 # Mapa de objetos para evitar milhares de queries
-                # Usamos ativos_monitorados (lista de tickers) que é muito menor que set_isins (lista de todos os ISINs de opções)
                 mapa_objetos = {a.codigo_isin: a for a in AtivoB3.objects.filter(ativo_objeto__in=ativos_monitorados)}
+                
+                # Identifica colunas extras para criação se necessário
+                col_ticker_inst = find_column(['Instrumento', 'Instrumento Financeiro', 'Ticker', 'SYMBOL', 'Instrumento financeiro'], df.columns)
 
                 for index, (idx_df, row) in enumerate(df_filtrado.iterrows(), 1):
                     try:
                         isin = row[coluna_isin]
                         ativo_obj = mapa_objetos.get(isin)
                         
+                        # Se não está no mapa, tenta buscar ou criar (sem barrar ISIN)
+                        if not ativo_obj:
+                            ativo_obj = AtivoB3.objects.filter(codigo_isin=isin).first()
+                            if not ativo_obj and col_ativo_obj:
+                                ticker_inst = str(row.get(col_ticker_inst, isin)).strip().upper() if col_ticker_inst else isin
+                                underlying = str(row.get(col_ativo_obj)).strip().upper()
+                                
+                                # Cria o ativo básico para não perder o preço (será enriquecido no upload_csv)
+                                ativo_obj = AtivoB3.objects.create(
+                                    codigo_isin=isin,
+                                    ticker=ticker_inst,
+                                    ativo_objeto=underlying,
+                                    segmento=str(row.get(col_segmento, '')).strip().upper() if col_segmento else ''
+                                )
+                                relatorio['logs'].append(f"Auto-criado AtivoB3: {ticker_inst} ({isin})")
+                            
+                            if ativo_obj:
+                                mapa_objetos[isin] = ativo_obj
+
+                        if not ativo_obj:
+                            continue
                         # Tratamento de Data (Coluna vs Manual)
                         data_linha = row.get(col_data_neg) if col_data_neg else None
                         if pd.notna(data_linha) and str(data_linha).strip() != '-':
@@ -468,7 +501,6 @@ def upload_precos(request):
                                 'maximo': convert_to_decimal(row.get(col_maximo)) if col_maximo else 0,
                                 'minimo': convert_to_decimal(row.get(col_minimo)) if col_minimo else 0,
                                 'fechamento': convert_to_decimal(row.get(col_fechamento)) if col_fechamento else 0,
-                                'ajuste': convert_to_decimal(row.get(col_ajuste)) if col_ajuste else 0,
                                 'quantidade_negocios': convert_to_int(row.get(col_qtd_neg)) if col_qtd_neg else 0,
                                 'volume_financeiro': convert_to_decimal(row.get(col_vol_fin)) if col_vol_fin else 0,
                                 'quantidade_contratos': convert_to_int(row.get(col_qtd_contratos)) if col_qtd_contratos else 0,
@@ -624,6 +656,8 @@ def remover_historico_precos_duplicados(request):
 @user_passes_test(apenas_admin)
 def recalcular_estruturas(request):
     """Recalcula todas as estruturas de todos os usuários."""
+    from trading.models import Estrutura
+    from trading.services import recalcular_estrutura
     estruturas = Estrutura.objects.all()
     total = estruturas.count()
     
@@ -631,6 +665,14 @@ def recalcular_estruturas(request):
         recalcular_estrutura(est)
         
     messages.success(request, f"Sucesso! {total} estruturas foram recalculadas.")
+    return redirect('core:home')
+
+@user_passes_test(apenas_admin)
+def sync_precos_b3(request):
+    """Aciona a sincronização de preços entre dadosb3 e core."""
+    from .services import sync_precos_negocios_b3
+    stats = sync_precos_negocios_b3()
+    messages.success(request, f"Sincronização concluída! {stats['novos']} novos, {stats['pulados']} já existentes.")
     return redirect('core:home')
 
 @user_passes_test(apenas_admin)

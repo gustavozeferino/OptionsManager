@@ -15,7 +15,8 @@ from django.core.cache import cache
 from django.core.files.storage import FileSystemStorage
 from django.conf import settings
 import unicodedata
-from .models import Instrumento, NegocioDiario, PosicaoAberta, LogProcessamento, InstrumentoAtualizacao
+from .models import Instrumento, BoletimNegocioDiario, CotacaoHistorica, NegocioDiario, PosicaoAberta, LogProcessamento, InstrumentoAtualizacao
+from .services import ingest_cothist_file
 
 def slugify(text):
     return "".join(c for c in unicodedata.normalize('NFD', str(text)) if unicodedata.category(c) != 'Mn').lower().strip()
@@ -26,6 +27,40 @@ def get_val(row, columns, terms):
         if all(t in c for t in terms):
             return row.iloc[i]
     return None
+
+def are_values_equal(v1, v2):
+    """
+    Compara dois valores seguindo a regra:
+    Para números, ignora casas decimais e analisa somente o valor absoluto.
+    Para outros tipos, usa comparação padrão.
+    """
+    if v1 == v2:
+        return True
+    
+    # Tratar casos de None ou strings vazias como equivalentes dependendo do contexto, 
+    # mas aqui vamos ser simples: se ambos forem "vazios", são iguais.
+    def is_empty(v):
+        return v is None or pd.isna(v) or str(v).strip() in ['', '-', 'nan']
+        
+    if is_empty(v1) and is_empty(v2):
+        return True
+    if is_empty(v1) != is_empty(v2):
+        return False
+
+    try:
+        # Tenta comparação numérica conforme pedido: abs(int(float))
+        # Substitui vírgula por ponto para garantir conversão de strings BR
+        s1 = str(v1).replace(',', '.')
+        s2 = str(v2).replace(',', '.')
+        
+        n1 = abs(int(float(s1)))
+        n2 = abs(int(float(s2)))
+        return n1 == n2
+    except:
+        pass
+    
+    # Fallback para string comparison limpa
+    return str(v1).strip() == str(v2).strip()
 
 # Configuração de logging para o módulo dadosb3
 LOG_DIR = os.path.join(settings.BASE_DIR, 'logs')
@@ -64,7 +99,12 @@ def parse_int(val):
     if pd.isna(val) or val == '' or val == '-':
         return None
     try:
-        val = str(val).replace('.', '')
+        val = str(val).strip()
+        # Se termina com .0 ou .00 (comum em arquivos processados), remove
+        if re.search(r'[.,]0{1,2}$', val):
+            val = re.sub(r'[.,]0{1,2}$', '', val)
+        # Remove pontos de milhar
+        val = val.replace('.', '')
         return int(val)
     except:
         return None
@@ -165,7 +205,7 @@ def ingest_cadastro(file_path, task_id, filename):
                     changes = []
                     for field, value in data_row.items():
                         old_val = getattr(obj, field)
-                        if str(old_val) != str(value):
+                        if not are_values_equal(old_val, value):
                             InstrumentoAtualizacao.objects.create(
                                 data_arquivo=date_ref,
                                 isin=isin,
@@ -257,7 +297,7 @@ def ingest_negocios(file_path, task_id, filename):
                 if vol and qtd_cont and qtd_cont > 0:
                     vwap_val = vol / Decimal(qtd_cont)
 
-                instances.append(NegocioDiario(
+                instances.append(BoletimNegocioDiario(
                     data_pregao=dt,
                     ticker=ticker,
                     isin=isin[:12],
@@ -282,7 +322,7 @@ def ingest_negocios(file_path, task_id, filename):
                     vwap=vwap_val,
                 ))
             if instances:
-                NegocioDiario.objects.bulk_create(instances, ignore_conflicts=True)
+                BoletimNegocioDiario.objects.bulk_create(instances, ignore_conflicts=True)
             
             processed_lines += len(chunk)
             cache.set(f'task_{task_id}', min(100, math.floor((processed_lines / total_lines) * 100)), timeout=3600)
@@ -375,6 +415,24 @@ def ingest_posicoes(file_path, task_id, filename):
         LogProcessamento.objects.create(nome_arquivo=filename, status='Erro', descricao_falha=error_msg)
         cache.set(f'task_{task_id}_error', error_msg, timeout=3600)
 
+def ingest_cothist_web(file_path, task_id, filename):
+    try:
+        count = ingest_cothist_file(file_path)
+        
+        summary = f"Importação de Cotação Histórica concluída. Registros processados: {count}"
+        cache.set(f'task_{task_id}_summary', summary, timeout=3600)
+        cache.set(f'task_{task_id}_summary_txt', summary, timeout=3600)
+        
+        logger.info(f"Sucesso ao processar arquivo COTAHIST: {filename}")
+        LogProcessamento.objects.create(nome_arquivo=filename, status='Sucesso', descricao_falha='-')
+        cache.set(f'task_{task_id}', 100, timeout=3600)
+    except Exception as e:
+        error_msg = str(e)
+        full_traceback = traceback.format_exc()
+        logger.error(f"Erro ao processar arquivo COTAHIST {filename}: {error_msg}\n{full_traceback}")
+        LogProcessamento.objects.create(nome_arquivo=filename, status='Erro', descricao_falha=error_msg)
+        cache.set(f'task_{task_id}_error', error_msg, timeout=3600)
+
 @login_required
 @user_passes_test(is_admin)
 def upload_view(request):
@@ -394,6 +452,8 @@ def upload_view(request):
             target_func = ingest_negocios
         elif file_type == 'posicoes':
             target_func = ingest_posicoes
+        elif file_type == 'cotacao_historica':
+            target_func = ingest_cothist_web
         else:
             target_func = None
             
