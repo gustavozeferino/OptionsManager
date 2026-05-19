@@ -1,87 +1,345 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="container mx-auto mt-8">
-    <h2 class="text-2xl font-bold mb-4">Upload de Dados B3</h2>
-    
-    <div class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
-        <form id="uploadForm" enctype="multipart/form-data">
-            {% csrf_token %}
-            
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2" for="file_type">
-                    Tipo de Arquivo
-                </label>
-                <select id="file_type" name="file_type" class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-                    <option value="cadastro">Cadastro de Instrumentos</option>
-                    <option value="negocios">Negócios Consolidados do Pregão</option>
-                    <option value="posicoes">Posições em Aberto</option>
-                    <option value="cotacao_historica">Cotação Histórica B3 (TXT/ZIP)</option>
-                </select>
+<style>
+.dropzone {
+    border: 2px dashed #0d6efd;
+    border-radius: 1rem;
+    padding: 3rem 1.5rem;
+    text-align: center;
+    background-color: #f8f9fa;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+.dropzone.dragover {
+    background-color: #e9ecef;
+    border-color: #198754;
+    transform: scale(1.02);
+}
+.radio-card input[type="radio"] {
+    display: none;
+}
+.radio-card label {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+}
+.radio-card input[type="radio"]:checked + label {
+    border-color: #0d6efd;
+    background-color: #f0f8ff;
+    box-shadow: 0 0 10px rgba(13, 110, 253, 0.2);
+}
+</style>
+
+<div class="container py-4 max-w-5xl">
+    <div class="d-flex align-items-center mb-4">
+        <i class="fas fa-database fs-2 text-primary me-3"></i>
+        <h2 class="fw-bold mb-0 text-dark">Ingestão de Dados B3</h2>
+    </div>
+
+    <!-- Seção Administrativa -->
+    <div class="card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0 text-secondary"><i class="fas fa-cogs me-2"></i> Rotinas Administrativas</h5>
+                <span class="badge bg-primary rounded-pill px-3 py-2">
+                    Último Pregão: <span id="lastDateBadge">Carregando...</span>
+                </span>
             </div>
-            
-            <div class="mb-6">
-                <label class="block text-gray-700 text-sm font-bold mb-2" for="file">
-                    Arquivo (CSV, TXT, ZIP)
-                </label>
-                <input type="file" id="file" name="file" accept=".csv,.txt,.zip" class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-            </div>
-            
-            <div class="flex items-center justify-between">
-                <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
-                    Iniciar Upload
+            <div class="d-flex gap-2">
+                <button id="btnConsolidar" class="btn btn-outline-secondary d-flex align-items-center">
+                    <i class="fas fa-compress-arrows-alt me-2"></i> Consolidar Negócios
+                </button>
+                <button id="btnSincronizar" class="btn btn-outline-secondary d-flex align-items-center">
+                    <i class="fas fa-sync-alt me-2"></i> Sincronizar Histórico
                 </button>
             </div>
-        </form>
-        
-        <div id="progressContainer" class="mt-8 hidden">
-            <h3 class="text-lg font-semibold mb-2">Progresso do Processamento</h3>
-            <div class="w-full bg-gray-200 rounded-full h-4 dark:bg-gray-700">
-              <div id="progressBar" class="bg-blue-600 h-4 rounded-full" style="width: 0%"></div>
-            </div>
-            <p id="progressText" class="text-sm mt-2 text-gray-600">0%</p>
         </div>
+    </div>
 
-        <div id="summaryContainer" class="mt-8 hidden">
-            <h3 class="text-lg font-semibold mb-2">Resumo do Processamento</h3>
-            <div id="summaryText" class="bg-gray-100 p-4 rounded text-sm overflow-auto max-h-96"></div>
+    <div class="card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body p-5">
+            <form id="uploadForm" enctype="multipart/form-data">
+                {% csrf_token %}
+                
+                <h5 class="fw-bold mb-3">1. Selecione o tipo de arquivo</h5>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6 col-lg-3 radio-card">
+                        <input type="radio" name="file_type" id="type_cadastro" value="cadastro" checked>
+                        <label class="card h-100 text-center p-3 shadow-sm rounded-3 w-100" for="type_cadastro">
+                            <i class="fas fa-clipboard-list fs-1 text-primary mb-2"></i>
+                            <span class="fw-semibold small">Cadastro de Instrumentos</span>
+                        </label>
+                    </div>
+                    <div class="col-md-6 col-lg-3 radio-card">
+                        <input type="radio" name="file_type" id="type_negocios" value="negocios">
+                        <label class="card h-100 text-center p-3 shadow-sm rounded-3 w-100" for="type_negocios">
+                            <i class="fas fa-handshake fs-1 text-success mb-2"></i>
+                            <span class="fw-semibold small">Negócios Consolidados</span>
+                        </label>
+                    </div>
+                    <div class="col-md-6 col-lg-3 radio-card">
+                        <input type="radio" name="file_type" id="type_posicoes" value="posicoes">
+                        <label class="card h-100 text-center p-3 shadow-sm rounded-3 w-100" for="type_posicoes">
+                            <i class="fas fa-chart-pie fs-1 text-purple mb-2" style="color: #6f42c1;"></i>
+                            <span class="fw-semibold small">Posições em Aberto</span>
+                        </label>
+                    </div>
+                    <div class="col-md-6 col-lg-3 radio-card">
+                        <input type="radio" name="file_type" id="type_cothist" value="cotacao_historica">
+                        <label class="card h-100 text-center p-3 shadow-sm rounded-3 w-100" for="type_cothist">
+                            <i class="fas fa-history fs-1 text-warning mb-2"></i>
+                            <span class="fw-semibold small">Cotação Histórica B3</span>
+                        </label>
+                    </div>
+                </div>
+
+                <h5 class="fw-bold mb-3">2. Anexar Arquivo</h5>
+                
+                <div id="dropzone" class="dropzone mb-4 position-relative">
+                    <input type="file" id="file" name="file" accept=".csv,.txt,.zip" class="d-none">
+                    <i class="fas fa-cloud-upload-alt fs-1 text-secondary mb-3"></i>
+                    <h5 class="text-dark">Arraste e solte o arquivo aqui</h5>
+                    <p class="text-muted mb-0">ou clique para explorar (.csv, .txt, .zip)</p>
+                </div>
+                
+                <div id="fileInfo" class="d-none alert alert-info d-flex align-items-center justify-content-between mb-4">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-file-alt fs-3 me-3 text-primary"></i>
+                        <div>
+                            <h6 id="fileName" class="mb-0 fw-bold"></h6>
+                            <small id="fileSize" class="text-muted"></small>
+                        </div>
+                    </div>
+                    <button type="button" id="removeFileBtn" class="btn btn-sm btn-outline-danger rounded-circle">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <button type="submit" id="btnSubmit" disabled class="btn btn-primary btn-lg w-100 fw-bold shadow-sm py-3 rounded-3">
+                    <span id="btnSubmitText">Iniciar Ingestão</span>
+                    <i id="btnSubmitSpinner" class="fas fa-circle-notch fa-spin ms-2 d-none"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Telemetry Panel -->
+    <div id="telemetryPanel" class="card shadow-lg border-0 rounded-4 bg-dark text-white mb-4 d-none">
+        <div class="card-body p-5">
+            <h5 class="fw-bold mb-4 text-success"><i class="fas fa-satellite-dish me-2"></i> Telemetria em Tempo Real</h5>
+            
+            <div class="d-flex justify-content-between align-items-end mb-2">
+                <span id="statusLabel" class="text-light">Processando...</span>
+                <h3 id="progressPercentage" class="fw-bold mb-0 text-white">0%</h3>
+            </div>
+            
+            <div class="progress mb-4" style="height: 25px; border-radius: 12.5px;">
+                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%"></div>
+            </div>
+            
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="bg-secondary bg-opacity-25 p-3 rounded-3 border border-secondary border-opacity-50">
+                        <small class="text-uppercase text-muted fw-bold d-block mb-1">Progresso Físico</small>
+                        <span id="linesProcessed" class="fs-4 fw-mono">0</span> / <span id="linesTotal" class="text-muted">?</span> <small>linhas</small>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="bg-secondary bg-opacity-25 p-3 rounded-3 border border-secondary border-opacity-50">
+                        <small class="text-uppercase text-muted fw-bold d-block mb-1">Performance</small>
+                        <span id="speedIndicator" class="fs-4 fw-mono">0</span> <small>reg/s</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Panel -->
+    <div id="summaryPanel" class="card shadow-sm border-success border-2 rounded-4 mb-4 d-none">
+        <div class="card-header bg-success bg-opacity-10 border-bottom-0 pt-4 pb-0 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold text-success mb-0"><i class="fas fa-check-circle me-2"></i> Relatório de Processamento</h5>
+            <span id="reportDate" class="badge bg-success">Hoje</span>
+        </div>
+        <div class="card-body p-4">
+            <div id="summaryContent" class="bg-light p-3 rounded-3 border" style="max-height: 400px; overflow-y: auto; font-family: monospace; white-space: pre-wrap;">
+                <!-- Result -->
+            </div>
+            <div class="text-end mt-4">
+                <button type="button" onclick="window.location.reload()" class="btn btn-outline-success">Novo Upload</button>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-document.getElementById('uploadForm').addEventListener('submit', function(e) {
-    e.preventDefault();
+document.addEventListener('DOMContentLoaded', function() {
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const removeFileBtn = document.getElementById('removeFileBtn');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const form = document.getElementById('uploadForm');
     
-    const formData = new FormData(this);
-    const progressContainer = document.getElementById('progressContainer');
+    // Telemetry DOM
+    const telemetryPanel = document.getElementById('telemetryPanel');
     const progressBar = document.getElementById('progressBar');
-    const progressText = document.getElementById('progressText');
-    const summaryContainer = document.getElementById('summaryContainer');
-    const summaryText = document.getElementById('summaryText');
+    const progressPercentage = document.getElementById('progressPercentage');
+    const linesProcessed = document.getElementById('linesProcessed');
+    const linesTotal = document.getElementById('linesTotal');
+    const speedIndicator = document.getElementById('speedIndicator');
+    const statusLabel = document.getElementById('statusLabel');
+    const btnSubmitText = document.getElementById('btnSubmitText');
+    const btnSubmitSpinner = document.getElementById('btnSubmitSpinner');
     
-    progressContainer.classList.remove('hidden');
-    summaryContainer.classList.add('hidden');
-    progressBar.style.width = '0%';
-    progressBar.classList.remove('bg-green-600', 'bg-red-600');
-    progressBar.classList.add('bg-blue-600');
-    progressText.innerText = 'Iniciando...';
+    // Summary DOM
+    const summaryPanel = document.getElementById('summaryPanel');
+    const summaryContent = document.getElementById('summaryContent');
+    const reportDate = document.getElementById('reportDate');
     
-    fetch('{% url "dadosb3:upload" %}', {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+    // Admin DOM
+    const btnConsolidar = document.getElementById('btnConsolidar');
+    const btnSincronizar = document.getElementById('btnSincronizar');
+    const lastDateBadge = document.getElementById('lastDateBadge');
+    
+    function formatBytes(bytes, decimals = 2) {
+        if (!+bytes) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+    }
+
+    function loadStats() {
+        fetch('{% url "dadosb3:admin_estatisticas" %}')
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    lastDateBadge.textContent = data.last_date;
+                } else {
+                    lastDateBadge.textContent = 'Erro';
+                }
+            }).catch(() => lastDateBadge.textContent = 'Indisponível');
+    }
+    loadStats();
+    
+    btnConsolidar.addEventListener('click', () => {
+        const icon = btnConsolidar.querySelector('i');
+        icon.classList.remove('fa-compress-arrows-alt');
+        icon.classList.add('fa-circle-notch', 'fa-spin');
+        fetch('{% url "dadosb3:admin_consolidar" %}', {
+            method: 'POST',
+            headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
+        }).then(r => r.json()).then(data => {
+            alert(data.message);
+            loadStats();
+        }).finally(() => {
+            icon.classList.add('fa-compress-arrows-alt');
+            icon.classList.remove('fa-circle-notch', 'fa-spin');
+        });
+    });
+    
+    btnSincronizar.addEventListener('click', () => {
+        const icon = btnSincronizar.querySelector('i');
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-circle-notch', 'fa-spin');
+        fetch('{% url "dadosb3:admin_sincronizar" %}', {
+            method: 'POST',
+            headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
+        }).then(r => r.json()).then(data => {
+            alert(data.message);
+        }).finally(() => {
+            icon.classList.add('fa-sync-alt');
+            icon.classList.remove('fa-circle-notch', 'fa-spin');
+        });
+    });
+
+    function handleFile(file) {
+        if (file) {
+            fileName.textContent = file.name;
+            fileSize.textContent = formatBytes(file.size);
+            dropzone.classList.add('d-none');
+            fileInfo.classList.remove('d-none');
+            btnSubmit.disabled = false;
+            
+            // Only update fileInput if this came from a drag and drop
+            // We use DataTransfer to mimic standard file selection
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
         }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.task_id) {
-            checkProgress(data.task_id);
+    }
+
+    // Dropzone Events
+    dropzone.addEventListener('click', () => fileInput.click());
+    
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    });
+    
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('dragover');
+    });
+    
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            handleFile(e.dataTransfer.files[0]);
         }
-    })
-    .catch(error => {
-        progressText.innerText = 'Erro ao enviar arquivo.';
-        console.error('Error:', error);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFile(e.target.files[0]);
+        }
+    });
+
+    removeFileBtn.addEventListener('click', () => {
+        fileInput.value = '';
+        dropzone.classList.remove('d-none');
+        fileInfo.classList.add('d-none');
+        btnSubmit.disabled = true;
+    });
+    
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        
+        btnSubmit.disabled = true;
+        btnSubmitText.textContent = 'Processando...';
+        btnSubmitSpinner.classList.remove('d-none');
+        
+        telemetryPanel.classList.remove('d-none');
+        summaryPanel.classList.add('d-none');
+        
+        progressBar.style.width = '0%';
+        progressBar.classList.remove('bg-danger', 'bg-success');
+        progressBar.classList.add('bg-primary');
+        progressPercentage.textContent = '0%';
+        
+        fetch('{% url "dadosb3:upload" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.task_id) {
+                checkProgress(data.task_id);
+            }
+        })
+        .catch(error => {
+            statusLabel.textContent = 'Erro ao enviar arquivo.';
+            progressBar.classList.replace('bg-primary', 'bg-danger');
+            btnSubmitText.textContent = 'Erro';
+            btnSubmitSpinner.classList.add('d-none');
+        });
     });
     
     function checkProgress(taskId) {
@@ -89,25 +347,37 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
             .then(response => response.json())
             .then(data => {
                 if (data.error) {
-                    progressText.innerText = 'Erro no processamento: ' + data.error;
-                    progressBar.classList.remove('bg-blue-600');
-                    progressBar.classList.add('bg-red-600');
+                    statusLabel.textContent = 'Erro no processamento: ' + data.error;
+                    progressBar.classList.replace('bg-primary', 'bg-danger');
+                    btnSubmitText.textContent = 'Falhou';
+                    btnSubmitSpinner.classList.add('d-none');
                 } else {
                     const progress = data.progress;
                     progressBar.style.width = `${progress}%`;
-                    progressText.innerText = `${progress}% concluído`;
+                    progressPercentage.textContent = `${progress}%`;
+                    
+                    if (data.stats) {
+                        linesProcessed.textContent = (data.stats.processed || 0).toLocaleString('pt-BR');
+                        linesTotal.textContent = (data.stats.total || 0).toLocaleString('pt-BR');
+                        speedIndicator.textContent = Math.round(data.stats.speed || 0).toLocaleString('pt-BR');
+                    }
                     
                     if (progress < 100) {
-                        setTimeout(() => checkProgress(taskId), 1000);
+                        setTimeout(() => checkProgress(taskId), 1500);
                     } else {
-                        progressText.innerText = 'Processamento concluído com sucesso!';
-                        progressBar.classList.remove('bg-blue-600');
-                        progressBar.classList.add('bg-green-600');
+                        statusLabel.textContent = 'Processamento concluído com sucesso!';
+                        progressBar.classList.replace('bg-primary', 'bg-success');
+                        btnSubmitText.textContent = 'Finalizado';
+                        btnSubmitSpinner.classList.add('d-none');
                         
                         if (data.summary) {
-                            summaryContainer.classList.remove('hidden');
-                            summaryText.innerHTML = data.summary;
+                            summaryPanel.classList.remove('d-none');
+                            summaryContent.innerHTML = data.summary;
+                            const d = new Date();
+                            reportDate.textContent = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
                         }
+                        
+                        loadStats();
                     }
                 }
             })
