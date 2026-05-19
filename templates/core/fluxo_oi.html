@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Fluxo das Posições - OptionsManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i class="fas fa-water me-2"></i>Fluxo das Posições (Open Interest)</h1>
+        <p class="text-muted small mb-0">Evolução temporal das Posições em Aberto e Volume Financeiro</p>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="card shadow-sm mb-4 border-0">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-center">
+            <div class="col-auto">
+                <label class="fw-bold mb-0">Ativo:</label>
+            </div>
+            <div class="col-auto">
+                <select name="ticker" class="form-select" onchange="this.form.submit()">
+                    {% for am in ativos_monitorados %}
+                    <option value="{{ am.ticker }}" {% if ticker_filtro == am.ticker %}selected{% endif %}>{{ am.ticker }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-auto">
+                <label class="fw-bold mb-0 ms-3">Vencimento:</label>
+            </div>
+            <div class="col-auto">
+                <select name="vencimento" class="form-select" onchange="this.form.submit()">
+                    <option value="Todos" {% if vencimento_filtro_str == 'Todos' %}selected{% endif %}>Todos os Vencimentos</option>
+                    {% for v in vencimentos_disponiveis %}
+                    <option value="{{ v|date:'Y-m-d' }}" {% if vencimento_filtro_str == v|date:'Y-m-d' %}selected{% endif %}>{{ v|date:'d/m/Y' }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- Gráfico 1: PCR e Distribuição -->
+    <div class="col-12">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+                <h5 class="fw-bold text-dark"><i class="fas fa-balance-scale-left text-primary me-2"></i>Distribuição de PUT e CALL e PCR</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-pcr" style="width: 100%; height: 400px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Gráfico 2: Volume OI -->
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+                <h5 class="fw-bold text-dark"><i class="fas fa-chart-line text-success me-2"></i>Volume de Contratos em Aberto</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-vol-oi" style="width: 100%; height: 400px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Gráfico 3: Volume Financeiro -->
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+                <h5 class="fw-bold text-dark"><i class="fas fa-money-bill-wave text-warning me-2"></i>Volume Financeiro</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-fin" style="width: 100%; height: 400px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{% static 'core/js/echarts.min.js' %}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const pcrData = {{ chart_pcr_json|safe }};
+        const volOiData = {{ chart_vol_oi_json|safe }};
+        const finData = {{ chart_fin_json|safe }};
+        
+        // 1. Gráfico PCR
+        const pcrChart = echarts.init(document.getElementById('chart-pcr'));
+        pcrChart.setOption({
+            tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+            legend: { data: ['% CALL', '% PUT', 'Put/Call Ratio'], bottom: 0 },
+            grid: { left: '3%', right: '3%', bottom: '10%', containLabel: true },
+            xAxis: [{ type: 'category', data: pcrData.datas }],
+            yAxis: [
+                { type: 'value', name: 'Distribuição (%)', min: 0, max: 100, axisLabel: { formatter: '{value} %' } },
+                { type: 'value', name: 'PCR Ratio', alignTicks: true }
+            ],
+            series: [
+                {
+                    name: '% CALL',
+                    type: 'bar',
+                    stack: 'Distribuicao',
+                    itemStyle: { color: '#28a745' },
+                    data: pcrData.pct_call
+                },
+                {
+                    name: '% PUT',
+                    type: 'bar',
+                    stack: 'Distribuicao',
+                    itemStyle: { color: '#dc3545' },
+                    data: pcrData.pct_put
+                },
+                {
+                    name: 'Put/Call Ratio',
+                    type: 'line',
+                    yAxisIndex: 1,
+                    itemStyle: { color: '#0d6efd' },
+                    lineStyle: { width: 3 },
+                    data: pcrData.pcr
+                }
+            ]
+        });
+
+        // 2. Gráfico Volume OI
+        const volOiChart = echarts.init(document.getElementById('chart-vol-oi'));
+        volOiChart.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['Total', 'CALL', 'PUT'], bottom: 0 },
+            grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
+            xAxis: { type: 'category', boundaryGap: false, data: volOiData.datas },
+            yAxis: { type: 'value', name: 'Qtd. Contratos' },
+            series: [
+                { name: 'Total', type: 'line', itemStyle: { color: '#6f42c1' }, data: volOiData.total },
+                { name: 'CALL', type: 'line', itemStyle: { color: '#28a745' }, data: volOiData.call },
+                { name: 'PUT', type: 'line', itemStyle: { color: '#dc3545' }, data: volOiData.put }
+            ]
+        });
+
+        // 3. Gráfico Volume Financeiro
+        const finChart = echarts.init(document.getElementById('chart-fin'));
+        finChart.setOption({
+            tooltip: { trigger: 'axis', valueFormatter: (val) => 'R$ ' + parseFloat(val).toLocaleString('pt-BR') },
+            legend: { data: ['Total', 'CALL', 'PUT'], bottom: 0 },
+            grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
+            xAxis: { type: 'category', boundaryGap: false, data: finData.datas },
+            yAxis: { type: 'value', name: 'Financeiro (R$)', axisLabel: { formatter: (val) => (val/1000000).toFixed(0) + 'M' } },
+            series: [
+                { name: 'Total', type: 'line', itemStyle: { color: '#6f42c1' }, data: finData.total },
+                { name: 'CALL', type: 'line', itemStyle: { color: '#28a745' }, data: finData.call },
+                { name: 'PUT', type: 'line', itemStyle: { color: '#dc3545' }, data: finData.put }
+            ]
+        });
+
+        window.addEventListener('resize', function() {
+            pcrChart.resize();
+            volOiChart.resize();
+            finChart.resize();
+        });
+    });
+</script>
+{% endblock %}

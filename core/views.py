@@ -1087,3 +1087,99 @@ def barreiras_open_interest(request):
         'dados_barreiras': dados_barreiras,
     }
     return render(request, 'core/barreiras_oi.html', context)
+
+@user_passes_test(apenas_admin)
+def fluxo_open_interest(request):
+    ticker_filtro = request.GET.get('ticker', 'BOVA11')
+    vencimento_filtro_str = request.GET.get('vencimento', 'Todos')
+    
+    ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).order_by('ticker')
+    
+    vencimentos_disponiveis = OpenInterest.objects.filter(
+        ativo_objeto=ticker_filtro
+    ).values_list('ativo__data_expiracao', flat=True).distinct().order_by('ativo__data_expiracao')
+    
+    # 1. OI
+    qs_oi = OpenInterest.objects.filter(ativo_objeto=ticker_filtro).select_related('ativo')
+    if vencimento_filtro_str and vencimento_filtro_str != 'Todos':
+        try:
+            venc_date = datetime.datetime.strptime(vencimento_filtro_str, '%Y-%m-%d').date()
+            qs_oi = qs_oi.filter(ativo__data_expiracao=venc_date)
+        except ValueError:
+            pass
+            
+    oi_por_data = defaultdict(lambda: {'call': 0, 'put': 0})
+    for p in qs_oi:
+        tipo = p.ativo.tipo_opcao.upper() if p.ativo.tipo_opcao else ''
+        dt_ref = p.data_referencia.strftime('%d/%m/%Y')
+        vol = p.total_posicoes
+        if 'CALL' in tipo or 'COMPRA' in tipo:
+            oi_por_data[dt_ref]['call'] += vol
+        elif 'PUT' in tipo or 'VENDA' in tipo:
+            oi_por_data[dt_ref]['put'] += vol
+            
+    datas_oi_obj = sorted([datetime.datetime.strptime(d, '%d/%m/%Y').date() for d in oi_por_data.keys()])
+    datas_oi = [d.strftime('%d/%m/%Y') for d in datas_oi_obj]
+    
+    chart_pcr = {'datas': datas_oi, 'pcr': [], 'pct_call': [], 'pct_put': []}
+    chart_vol_oi = {'datas': datas_oi, 'call': [], 'put': [], 'total': []}
+    
+    for d in datas_oi:
+        c_vol = oi_por_data[d]['call']
+        p_vol = oi_por_data[d]['put']
+        total = c_vol + p_vol
+        
+        pcr = (p_vol / c_vol) if c_vol > 0 else 0
+        pct_c = (c_vol / total * 100) if total > 0 else 0
+        pct_p = (p_vol / total * 100) if total > 0 else 0
+        
+        chart_pcr['pcr'].append(round(pcr, 2))
+        chart_pcr['pct_call'].append(round(pct_c, 2))
+        chart_pcr['pct_put'].append(round(pct_p, 2))
+        
+        chart_vol_oi['call'].append(c_vol)
+        chart_vol_oi['put'].append(p_vol)
+        chart_vol_oi['total'].append(total)
+        
+    # 2. Financeiro
+    qs_hist = HistoricoPreco.objects.filter(ativo__ativo_objeto=ticker_filtro).select_related('ativo')
+    if vencimento_filtro_str and vencimento_filtro_str != 'Todos':
+        try:
+            venc_date = datetime.datetime.strptime(vencimento_filtro_str, '%Y-%m-%d').date()
+            qs_hist = qs_hist.filter(ativo__data_expiracao=venc_date)
+        except ValueError:
+            pass
+            
+    fin_por_data = defaultdict(lambda: {'call': 0.0, 'put': 0.0})
+    for h in qs_hist:
+        tipo = h.ativo.tipo_opcao.upper() if h.ativo.tipo_opcao else ''
+        dt_pregao = h.data_pregao.strftime('%d/%m/%Y')
+        vol = float(h.volume_financeiro)
+        if 'CALL' in tipo or 'COMPRA' in tipo:
+            fin_por_data[dt_pregao]['call'] += vol
+        elif 'PUT' in tipo or 'VENDA' in tipo:
+            fin_por_data[dt_pregao]['put'] += vol
+            
+    datas_fin_obj = sorted([datetime.datetime.strptime(d, '%d/%m/%Y').date() for d in fin_por_data.keys()])
+    datas_fin = [d.strftime('%d/%m/%Y') for d in datas_fin_obj]
+    
+    chart_fin = {'datas': datas_fin, 'call': [], 'put': [], 'total': []}
+    for d in datas_fin:
+        c_vol = fin_por_data[d]['call']
+        p_vol = fin_por_data[d]['put']
+        total = c_vol + p_vol
+        
+        chart_fin['call'].append(round(c_vol, 2))
+        chart_fin['put'].append(round(p_vol, 2))
+        chart_fin['total'].append(round(total, 2))
+        
+    context = {
+        'ativos_monitorados': ativos_monitorados,
+        'ticker_filtro': ticker_filtro,
+        'vencimentos_disponiveis': vencimentos_disponiveis,
+        'vencimento_filtro_str': vencimento_filtro_str,
+        'chart_pcr_json': json.dumps(chart_pcr),
+        'chart_vol_oi_json': json.dumps(chart_vol_oi),
+        'chart_fin_json': json.dumps(chart_fin),
+    }
+    return render(request, 'core/fluxo_oi.html', context)

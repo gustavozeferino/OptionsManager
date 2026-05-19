@@ -1,4 +1,7 @@
 import logging
+import time
+import math
+from django.core.cache import cache
 from datetime import datetime
 from decimal import Decimal
 from django.db import transaction
@@ -29,7 +32,7 @@ def normalize_segmento(codbdi, tpmerc):
         return "MERCADO FRACIONARIO"
     return "OUTROS"
 
-def consolidar_negocios(min_date=None):
+def consolidar_negocios(min_date=None, task_id=None):
     """Consolida os dados de CotacaoHistorica e BoletimNegocioDiario em NegocioDiario a partir de min_date"""
     logger.info(f"Iniciando consolidacao de negocios a partir de {min_date}")
     
@@ -45,12 +48,19 @@ def consolidar_negocios(min_date=None):
     
     if not dates_to_process:
         logger.info("Nenhuma data para consolidar.")
+        if task_id:
+            cache.set(f'task_{task_id}', 100, timeout=3600)
+            cache.set(f'task_{task_id}_summary', "Nenhuma data para consolidar.", timeout=3600)
         return 0
 
     mapa_isin_por_ticker = dict(Instrumento.objects.values_list('ticker', 'isin'))
     total_processed = 0
+    
+    if task_id:
+        start_time_task = time.time()
+        cache.set(f'task_{task_id}_stats', {'processed': 0, 'total': len(dates_to_process), 'speed': 0, 'start_time': start_time_task, 'unit': 'dias'}, timeout=3600)
 
-    for dt in dates_to_process:
+    for index, dt in enumerate(dates_to_process, 1):
         golden_map = {}
         for e in NegocioDiario.objects.filter(data_pregao=dt):
             golden_map[e.isin] = e
@@ -133,7 +143,7 @@ def consolidar_negocios(min_date=None):
     logger.info(f"Consolidacao concluida. Registros consolidados: {total_processed}")
     return total_processed
 
-def sincronizar_historico_preco(min_date=None):
+def sincronizar_historico_preco(min_date=None, task_id=None):
     """Sincroniza a tabela NegocioDiario (Golden Source) com HistoricoPreco (apenas para Ativos Monitorados)"""
     logger.info(f"Sincronizando HistoricoPreco a partir de {min_date}")
     

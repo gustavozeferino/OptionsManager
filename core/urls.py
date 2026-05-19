@@ -20,5 +20,6 @@ urlpatterns = [
     path('upload-open-interest/', views.upload_open_interest, name='upload_open_interest'),
     path('consultar-open-interest/', views.consultar_open_interest, name='consultar_open_interest'),
     path('grafico-open-interest/', views.grafico_open_interest, name='grafico_open_interest'),
+    path('fluxo-open-interest/', views.fluxo_open_interest, name='fluxo_open_interest'),
     path('barreiras-open-interest/', views.barreiras_open_interest, name='barreiras_open_interest'),
 ]
