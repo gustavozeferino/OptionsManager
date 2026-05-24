@@ -460,6 +460,7 @@ def detalhe_rolagem(request, slug):
     valid_snapshots = [s for s in snapshots if s.spread_total is not None]
     datas_chart = [s.data.strftime('%d/%m/%Y') for s in valid_snapshots]
     valores_chart = [float(s.spread_total) for s in valid_snapshots]
+    valores_chart_fechamento = [float(s.spread_fechamento) if s.spread_fechamento is not None else None for s in valid_snapshots]
     
     # Legs para a tabela de detalhes
     legs = rolagem.legs.select_related('ativo').all()
@@ -470,6 +471,7 @@ def detalhe_rolagem(request, slug):
         'legs': legs,
         'datas_chart': json.dumps(datas_chart),
         'valores_chart': json.dumps(valores_chart),
+        'valores_chart_fechamento': json.dumps(valores_chart_fechamento),
     })
 
 @login_required

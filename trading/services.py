@@ -476,6 +476,7 @@ def recalcular_rolagem(rolagem):
     
     dados_por_dia = defaultdict(dict)
     contratos_por_dia = defaultdict(dict)
+    fechamento_por_dia = defaultdict(dict)
     
     for h in historicos:
         vwap = Decimal('0')
@@ -484,6 +485,7 @@ def recalcular_rolagem(rolagem):
         
         dados_por_dia[h.data_pregao][h.ativo_id] = vwap
         contratos_por_dia[h.data_pregao][h.ativo_id] = h.quantidade_contratos
+        fechamento_por_dia[h.data_pregao][h.ativo_id] = h.fechamento
 
     datas_disponiveis = sorted(dados_por_dia.keys())
     snapshots_to_create = []
@@ -492,31 +494,38 @@ def recalcular_rolagem(rolagem):
         valido_spread = True
         detalhes = {}
         spread_total_dia = Decimal('0')
+        spread_fechamento_dia = Decimal('0')
         
         for leg in legs:
             contratos = contratos_por_dia[data].get(leg.ativo_id, 0)
             vwap = dados_por_dia[data].get(leg.ativo_id)
+            fechamento = fechamento_por_dia[data].get(leg.ativo_id)
             
             # Detalhes armazena vwap e contratos (contratos não sofre influência do filtro)
             detalhes[leg.ativo.ticker] = {
                 'vwap': float(vwap) if vwap else 0.0,
+                'fechamento': float(fechamento) if fechamento else 0.0,
                 'contratos': contratos
             }
             
             # Validação para o spread (VWAP e contratos mínimos)
-            if contratos < rolagem.filtro_liquidez or vwap is None:
+            if contratos < rolagem.filtro_liquidez or vwap is None or fechamento is None:
                 valido_spread = False
                 
             if vwap:
                 spread_total_dia += vwap * leg.quantidade
+            if fechamento:
+                spread_fechamento_dia += fechamento * leg.quantidade
             
         if not valido_spread:
             spread_total_dia = None
+            spread_fechamento_dia = None
             
         snapshots_to_create.append(RolagemSnapshot(
             rolagem=rolagem,
             data=data,
             spread_total=spread_total_dia,
+            spread_fechamento=spread_fechamento_dia,
             detalhes_legs=detalhes
         ))
 

@@ -22,4 +22,7 @@ urlpatterns = [
     path('grafico-open-interest/', views.grafico_open_interest, name='grafico_open_interest'),
     path('fluxo-open-interest/', views.fluxo_open_interest, name='fluxo_open_interest'),
     path('barreiras-open-interest/', views.barreiras_open_interest, name='barreiras_open_interest'),
+    path('db-viewer/', views.db_viewer, name='db_viewer'),
+    path('db-viewer/data/', views.db_viewer_data, name='db_viewer_data'),
+    path('db-viewer/export/', views.db_viewer_export, name='db_viewer_export'),
 ]

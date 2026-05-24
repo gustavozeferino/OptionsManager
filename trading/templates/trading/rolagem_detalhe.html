@@ -67,7 +67,8 @@
                             <th>VWAP {{ leg.ativo.ticker }}</th>
                             <th>Contratos</th>
                         {% endfor %}
-                        <th class="fw-bold">Spread Total</th>
+                        <th class="fw-bold">Spread (VWAP)</th>
+                        <th class="fw-bold">Spread (Fech.)</th>
                     </tr>
                 </thead>
                 <tbody class="text-center">
@@ -97,10 +98,17 @@
                                 <span class="text-muted">-</span>
                             {% endif %}
                         </td>
+                        <td class="fw-bold {% if s.spread_fechamento > 0 %}text-success{% elif s.spread_fechamento < 0 %}text-danger{% endif %}">
+                            {% if s.spread_fechamento is not None %}
+                                R$ {{ s.spread_fechamento|floatformat:2|intcomma }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="{{ legs|length|multiply:2|add:2 }}" class="text-center py-4 text-muted">Nenhum dado histórico disponível.</td>
+                        <td colspan="{{ legs|length|multiply:2|add:3 }}" class="text-center py-4 text-muted">Nenhum dado histórico disponível.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -120,13 +128,16 @@
 
         const rawDatas = '{{ datas_chart|escapejs }}';
         const rawValores = '{{ valores_chart|escapejs }}';
+        const rawFechamento = '{{ valores_chart_fechamento|escapejs }}';
 
         let datas = [];
         let valores = [];
+        let valoresFechamento = [];
 
         try {
             datas = JSON.parse(rawDatas);
             valores = JSON.parse(rawValores);
+            valoresFechamento = JSON.parse(rawFechamento);
         } catch (e) {
             console.error("Erro ao fazer parse dos dados do gráfico", e);
         }
@@ -140,10 +151,20 @@
             tooltip: {
                 trigger: 'axis',
                 formatter: function (params) {
-                    let val = params[0].value;
-                    let numStr = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-                    return `${params[0].axisValue}<br/>${params[0].marker} Spread: <b>${numStr}</b>`;
+                    let text = params[0].axisValue + '<br/>';
+                    params.forEach(function(param) {
+                        if (param.value !== undefined && param.value !== null) {
+                            let val = param.value;
+                            let numStr = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+                            text += `${param.marker} ${param.seriesName}: <b>${numStr}</b><br/>`;
+                        }
+                    });
+                    return text;
                 }
+            },
+            legend: {
+                data: ['Spread (VWAP)', 'Spread (Fechamento)'],
+                bottom: 0
             },
             grid: {
                 left: '3%',
@@ -166,7 +187,7 @@
             },
             series: [
                 {
-                    name: 'Spread',
+                    name: 'Spread (VWAP)',
                     type: 'line',
                     smooth: true,
                     lineStyle: {
@@ -183,6 +204,20 @@
                         ])
                     },
                     data: valores
+                },
+                {
+                    name: 'Spread (Fechamento)',
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: {
+                        color: '#28a745',
+                        width: 3,
+                        type: 'dashed'
+                    },
+                    itemStyle: {
+                        color: '#28a745'
+                    },
+                    data: valoresFechamento
                 }
             ]
         };

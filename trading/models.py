@@ -145,7 +145,8 @@ class RolagemSnapshot(models.Model):
     rolagem = models.ForeignKey(Rolagem, on_delete=models.CASCADE, related_name='snapshots')
     data = models.DateField()
     spread_total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
-    detalhes_legs = models.JSONField(default=dict) # {ticker: {'vwap': float, 'negocios': int}}
+    spread_fechamento = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    detalhes_legs = models.JSONField(default=dict) # {ticker: {'vwap': float, 'fechamento': float, 'negocios': int}}
 
     class Meta:
         verbose_name = "Snapshot de Rolagem"

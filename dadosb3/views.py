@@ -445,7 +445,29 @@ def ingest_posicoes(file_path, task_id, filename):
 
 def ingest_cothist_web(file_path, task_id, filename):
     try:
-        count = ingest_cothist_file(file_path)
+        total_lines = 1
+        if file_path.lower().endswith('.zip'):
+            import zipfile
+            with zipfile.ZipFile(file_path, 'r') as z:
+                for fname in z.namelist():
+                    if fname.lower().endswith('.txt'):
+                        with z.open(fname) as f:
+                            total_lines = sum(1 for _ in f)
+                        break
+        else:
+            with open(file_path, 'rb') as f:
+                total_lines = sum(1 for _ in f)
+                
+        if total_lines <= 0: total_lines = 1
+
+        stats = cache.get(f'task_{task_id}_stats') or {'start_time': time.time()}
+        
+        def progress_cb(processed_lines):
+            elapsed = max(1, time.time() - stats['start_time'])
+            cache.set(f'task_{task_id}_stats', {'processed': processed_lines, 'total': total_lines, 'speed': processed_lines / elapsed, 'start_time': stats['start_time']}, timeout=3600)
+            cache.set(f'task_{task_id}', min(99, math.floor((processed_lines / total_lines) * 100)), timeout=3600)
+
+        count = ingest_cothist_file(file_path, progress_callback=progress_cb)
         
         min_date = CotacaoHistorica.objects.order_by('dtpreg').last().dtpreg if CotacaoHistorica.objects.exists() else None
         if min_date:

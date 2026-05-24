@@ -59,7 +59,7 @@ def process_cothist_line(data):
         print(f"Error processing line: {e}")
         return None
 
-def ingest_cothist_file(file_path):
+def ingest_cothist_file(file_path, progress_callback=None):
     instances = []
     chunk_size = 5000
 
@@ -83,18 +83,22 @@ def ingest_cothist_file(file_path):
             if len(instances) >= chunk_size:
                 CotacaoHistorica.objects.bulk_create(instances, ignore_conflicts=True)
                 instances.clear()
+                if progress_callback:
+                    progress_callback(count)
 
         if instances:
             CotacaoHistorica.objects.bulk_create(instances, ignore_conflicts=True)
             instances.clear()
+            if progress_callback:
+                progress_callback(count)
         
         return count
 
 
-    if file_path.endswith('.zip'):
+    if file_path.lower().endswith('.zip'):
         with zipfile.ZipFile(file_path, 'r') as z:
             for filename in z.namelist():
-                if filename.endswith('.txt'):
+                if filename.lower().endswith('.txt'):
                     with z.open(filename) as f:
                         return process_file_obj(f)
     else:

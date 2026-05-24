@@ -1,0 +1,279 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Visualizador de Banco de Dados{% endblock %}
+
+{% block extra_css %}
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap5.min.css">
+<!-- Select2 para escolha da tabela -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
+<style>
+    .card-header-custom {
+        background-color: #f8f9fa;
+        font-weight: 600;
+        font-size: 1.1rem;
+        border-bottom: 1px solid #e9ecef;
+    }
+    
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    .table th {
+        white-space: nowrap;
+        background-color: #f8f9fa;
+    }
+    
+    .dt-buttons .btn {
+        margin-right: 5px;
+    }
+    
+    /* Personaliza o layout do datatables para se parecer com a imagem */
+    .dataTables_wrapper .row:first-child {
+        display: none; /* Esconde o filtro nativo pois vamos fazer customizado */
+    }
+    
+    .top-toolbar {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+    
+    .table-info-pill {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Seletor de Tabela -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header card-header-custom py-3">
+        <i class="fas fa-database me-2"></i>Objetos (tabelas/views)
+    </div>
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <select id="tableSelector" class="form-select" data-placeholder="Selecione um banco e tabela...">
+                    <option></option>
+                    {% for t in tables_info %}
+                        <option value="{{ t.db }}|{{ t.table }}">{{ t.db }}: {{ t.table }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4 mt-3 mt-md-0">
+                <button id="btnLoadTable" class="btn btn-outline-primary px-4">
+                    <i class="fas fa-eye me-2"></i>Abrir
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-0" id="mainTableCard" style="display: none;">
+        
+        <div class="p-4">
+            <!-- Barra superior personalizada -->
+            <div class="top-toolbar">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-info-circle text-muted me-2"></i>
+                    <span class="text-muted small">Tabela:</span>
+                    <strong class="ms-2" id="currentTableName">-</strong>
+                </div>
+                
+                <div class="d-flex align-items-center" style="flex: 1; max-width: 500px; margin: 0 20px;">
+                    <label class="me-3 fw-bold mb-0 text-nowrap">Buscar nesta página</label>
+                    <input type="search" id="customSearchInput" class="form-control" placeholder="Digite para filtrar as linhas visíveis">
+                </div>
+                
+                <div class="table-info-pill">
+                    <i class="fas fa-info-circle me-1"></i> <span id="customTableInfo">Carregando...</span>
+                </div>
+            </div>
+
+            <!-- Tabela -->
+            <div class="table-container">
+                <table id="dbTable" class="table table-striped table-hover table-bordered w-100 align-middle">
+                    <!-- As colunas serão geradas via JS -->
+                </table>
+            </div>
+            
+            <hr>
+            
+            <!-- Botões de Ação na parte inferior (Exportação) -->
+            <div class="d-flex justify-content-center flex-wrap mt-4" id="exportContainer">
+                <div class="btn-group me-2 mb-2">
+                    <button id="btnCopyAll" class="btn btn-outline-secondary">
+                        <i class="far fa-copy me-1"></i>Copiar Tudo
+                    </button>
+                </div>
+                <div class="btn-group me-2 mb-2">
+                    <button id="btnExportJSON" class="btn btn-outline-secondary">
+                        <i class="far fa-file-code me-1"></i>Exportar JSON
+                    </button>
+                </div>
+                <div class="btn-group mb-2">
+                    <button id="btnExportCSV" class="btn btn-outline-secondary">
+                        <i class="far fa-file-excel me-1"></i>Exportar CSV (Excel)
+                    </button>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    
+    <div class="card-body text-center p-5" id="placeholderCard">
+        <h5 class="text-muted"><i class="fas fa-arrow-up me-2"></i>Selecione uma tabela acima e clique em Abrir</h5>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- jQuery -->
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<!-- DataTables & Plugins -->
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<!-- Select2 -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<script>
+    let dtInstance = null;
+    let currentDb = '';
+    let currentTable = '';
+
+    $(document).ready(function() {
+        // Inicializa Select2
+        $('#tableSelector').select2({
+            theme: 'bootstrap-5',
+            width: '100%'
+        });
+
+        $('#btnLoadTable').click(function() {
+            const val = $('#tableSelector').val();
+            if (!val) {
+                alert("Por favor, selecione uma tabela.");
+                return;
+            }
+            
+            const parts = val.split('|');
+            currentDb = parts[0];
+            currentTable = parts[1];
+            
+            $('#currentTableName').text(currentTable);
+            $('#placeholderCard').hide();
+            $('#mainTableCard').show();
+            
+            initTable(currentDb, currentTable);
+        });
+        
+        // Export CSV button handler
+        $('#btnExportCSV').click(function() {
+            if (!currentTable) return;
+            let searchValue = $('#customSearchInput').val();
+            let url = `{% url 'core:db_viewer_export' %}?db=${encodeURIComponent(currentDb)}&table=${encodeURIComponent(currentTable)}&search=${encodeURIComponent(searchValue)}`;
+            window.location.href = url;
+        });
+
+        // Copiar tudo - copia via request AJAX simples pegando todos da tela ou export
+        $('#btnCopyAll').click(function() {
+            alert("Recurso 'Copiar' utiliza os botões nativos do DataTables, em breve via clipboard API.");
+        });
+
+        // Export JSON - request API direta 
+        $('#btnExportJSON').click(function() {
+            if (!currentTable) return;
+            let searchValue = $('#customSearchInput').val();
+            // Utilizando o backend data API, mas sem limits de pagination (não implementado full export em JSON no python, mas abre nova aba com o response paginado como fallback)
+            let url = `{% url 'core:db_viewer_data' %}?db=${encodeURIComponent(currentDb)}&table=${encodeURIComponent(currentTable)}&search[value]=${encodeURIComponent(searchValue)}&length=10000`;
+            window.open(url, '_blank');
+        });
+    });
+
+    function initTable(db_alias, table_name) {
+        if (dtInstance) {
+            dtInstance.destroy();
+            $('#dbTable').empty();
+        }
+
+        // 1. Precisamos saber as colunas antes de inicializar o DataTables Server-Side
+        // Vamos fazer uma requisição apenas para a primeira página com length=1 para capturar o schema das colunas
+        
+        $.ajax({
+            url: `{% url 'core:db_viewer_data' %}`,
+            data: { db: db_alias, table: table_name, length: 1, start: 0, draw: 1 },
+            success: function(res) {
+                if (res.error) {
+                    alert("Erro: " + res.error);
+                    return;
+                }
+                
+                // Constrói array de colunas do DataTables
+                // Adicionamos coluna # falsa no inicio
+                let dtColumns = [{
+                    data: null, 
+                    title: '#',
+                    orderable: false,
+                    searchable: false,
+                    render: function (data, type, row, meta) {
+                        return meta.row + meta.settings._iDisplayStart + 1;
+                    }
+                }];
+
+                res.columns.forEach(function(col) {
+                    dtColumns.push({ data: col, title: col, defaultContent: "" });
+                });
+
+                // 2. Inicializa o DataTable completo com Server-Side Processing
+                dtInstance = $('#dbTable').DataTable({
+                    serverSide: true,
+                    processing: true,
+                    ajax: {
+                        url: `{% url 'core:db_viewer_data' %}`,
+                        data: function (d) {
+                            d.db = currentDb;
+                            d.table = currentTable;
+                        }
+                    },
+                    columns: dtColumns,
+                    pageLength: 25,
+                    lengthMenu: [10, 25, 50, 100, 500],
+                    order: [], // sem ordenação inicial forçada
+                    language: {
+                        url: "https://cdn.datatables.net/plug-ins/1.13.6/i18n/pt-BR.json"
+                    },
+                    dom: 'rt<"row mt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7 d-flex align-items-center justify-content-end"<"me-3"l>p>>',
+                    infoCallback: function(settings, start, end, max, total, pre) {
+                        let current_page = Math.ceil(start / settings._iDisplayLength);
+                        let total_pages = Math.ceil(total / settings._iDisplayLength);
+                        if (total_pages === 0) { current_page = 0; total_pages = 1; }
+                        
+                        let txt = `${total} linha(s) • Página ${current_page} de ${total_pages}`;
+                        $('#customTableInfo').text(txt);
+                        return ""; // Esconde o texto nativo do datatable pois injetamos no topo
+                    }
+                });
+
+                // Conecta o input de busca customizado ao DataTables
+                $('#customSearchInput').off('keyup').on('keyup', function() {
+                    dtInstance.search(this.value).draw();
+                });
+            },
+            error: function() {
+                alert("Erro ao buscar dados da tabela.");
+            }
+        });
+    }
+</script>
+{% endblock %}
