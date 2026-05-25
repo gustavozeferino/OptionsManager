@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from .models import LayoutConfig
 
 User = get_user_model()
 
@@ -88,3 +89,76 @@ class UserViewTest(TestCase):
         response = self.client.post('/users/logout/')
         self.assertEqual(response.status_code, 302)
         self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+
+class LayoutConfigTest(TestCase):
+    """Testes para configuração de layout e cores."""
+
+    def setUp(self):
+        self.user_password = 'testpass123'
+        self.user = User.objects.create_user(
+            username='layoutuser',
+            email='layout@example.com',
+            password=self.user_password
+        )
+
+    def test_lazy_layout_config_creation(self):
+        """Testa se a propriedade layout cria e retorna o LayoutConfig automaticamente."""
+        # Inicialmente não existe
+        self.assertFalse(LayoutConfig.objects.filter(usuario=self.user).exists())
+        
+        # Acesso via propriedade
+        config = self.user.layout
+        
+        # Agora deve existir
+        self.assertTrue(LayoutConfig.objects.filter(usuario=self.user).exists())
+        self.assertEqual(config.compra_color, '#10b981')  # Valor padrão
+        self.assertEqual(config.venda_color, '#ef4444')    # Valor padrão
+
+    def test_customizar_layout_view_anonymous(self):
+        """Testa se o acesso à view é restrito para usuários anônimos."""
+        response = self.client.get('/users/layout/')
+        self.assertEqual(response.status_code, 302)  # Redireciona para o login
+
+    def test_customizar_layout_view_authenticated(self):
+        """Testa se o usuário autenticado acessa e salva novas cores."""
+        self.client.login(username='layoutuser', password=self.user_password)
+        
+        # Acessa a página
+        response = self.client.get('/users/layout/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'users/customizar_layout.html')
+        
+        # Envia novas cores
+        response = self.client.post('/users/layout/', {
+            'compra_color': '#22c55e',
+            'venda_color': '#ef4444',
+            'call_color': '#00d4aa',
+            'put_color': '#f59e0b',
+            'ativo_color': '#6c63ff'
+        })
+        self.assertEqual(response.status_code, 302)  # Redireciona após salvar
+        
+        # Verifica se as novas cores foram salvas no banco
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.layout.compra_color, '#22c55e')
+        self.assertEqual(self.user.layout.ativo_color, '#6c63ff')
+
+    def test_customizar_layout_reset_defaults(self):
+        """Testa se é possível restaurar as cores padrões."""
+        self.client.login(username='layoutuser', password=self.user_password)
+        
+        # Modifica primeiro
+        config = self.user.layout
+        config.compra_color = '#ffffff'
+        config.save()
+        
+        # Envia requisição de reset
+        response = self.client.post('/users/layout/', {
+            'reset_defaults': 'true'
+        })
+        self.assertEqual(response.status_code, 302)
+        
+        # Verifica se voltou aos padrões
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.layout.compra_color, '#10b981')

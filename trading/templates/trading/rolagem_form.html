@@ -31,7 +31,7 @@
                     </div>
 
                     <hr class="my-4">
-                    <h6 class="mb-3"><i class="fas fa-layer-group me-2"></i> Legs da Rolagem (Máx 4)</h6>
+                    <h6 class="mb-3"><i class="fas fa-layer-group me-2"></i> Legs do Spread (Máx 4)</h6>
                     
                     {{ formset.management_form }}
                     <div class="table-responsive">
@@ -73,7 +73,7 @@
                     <div class="d-flex justify-content-between mt-4">
                         <a href="{% url 'trading:lista_rolagens' %}" class="btn btn-outline-secondary">Cancelar</a>
                         <button type="submit" class="btn btn-primary px-4">
-                            <i class="fas fa-save me-1"></i> Salvar Rolagem
+                            <i class="fas fa-save me-1"></i> Salvar Spread
                         </button>
                     </div>
                 </form>
@@ -82,7 +82,7 @@
         
         <div class="alert alert-info mt-4">
             <i class="fas fa-info-circle me-2"></i>
-            <strong>Dica:</strong> Para rolagens (spreads), utilize quantidades negativas para as pernas vendidas e positivas para as compradas. O sistema calculará o spread financeiro total automaticamente.
+            <strong>Dica:</strong> Para spreads, utilize quantidades negativas para as pernas vendidas e positivas para as compradas. O sistema calculará o spread financeiro total automaticamente.
         </div>
     </div>
 </div>

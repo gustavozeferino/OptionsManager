@@ -1,0 +1,297 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{% translate "Customizar Layout — OptionsManager" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .color-card {
+        padding: 16px;
+        background-color: rgba(255, 255, 255, 0.01);
+        border: 1px solid var(--dash-border);
+        border-radius: 12px;
+        transition: background-color 0.2s;
+    }
+    .color-card:hover {
+        background-color: rgba(255, 255, 255, 0.03);
+    }
+    .preview-box {
+        background-color: var(--dash-card);
+        border: 1px solid var(--dash-border);
+        border-radius: 16px;
+        padding: 24px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .preview-title {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--dash-muted);
+        font-weight: 700;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    /* Mock components classes for live preview */
+    .mock-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.35em 0.8em;
+        border-radius: 4px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        border: 1px solid transparent;
+        transition: all 0.2s ease;
+    }
+    
+    .mock-row {
+        background-color: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--dash-border);
+        border-radius: 10px;
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        transition: background-color 0.2s;
+    }
+    .mock-row:hover {
+        background-color: var(--dash-card-hover);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4" style="padding-top:4px;">
+    <div>
+        <h4 class="mb-0 fw-bold" style="color:var(--dash-text);">
+            <i class="fas fa-palette me-2" style="color:var(--dash-accent);"></i>{% translate "Customização do Layout" %}
+        </h4>
+        <span class="text-muted small">{% translate "Personalize o esquema de cores para operações e tipos de opções" %}</span>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Form settings -->
+    <div class="col-xl-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-sliders-h me-2 text-primary"></i>{% translate "Seletor de Cores" %}</span>
+                
+                <!-- Reset form -->
+                <form method="post" class="m-0">
+                    {% csrf_token %}
+                    <button type="submit" name="reset_defaults" class="btn btn-sm btn-outline-secondary" onclick="return confirm('{% translate "Deseja realmente restaurar as cores padrões?" %}')">
+                        <i class="fas fa-undo me-1"></i>{% translate "Padrão do Sistema" %}
+                    </button>
+                </form>
+            </div>
+            <div class="card-body">
+                <form method="post" class="d-flex flex-column gap-3 h-100">
+                    {% csrf_token %}
+                    
+                    <div class="row g-3">
+                        {% for field in form %}
+                        <div class="col-md-6 col-12">
+                            <div class="color-card">
+                                <label for="{{ field.id_for_label }}" class="form-label mb-2 d-block fw-bold text-light">
+                                    {{ field.label }}
+                                </label>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div style="flex-grow: 1;">
+                                        {{ field }}
+                                    </div>
+                                    <span class="badge bg-dark border border-secondary font-monospace p-2 hex-label" id="label-{{ field.id_for_label }}" style="font-size: 0.8rem; width: 80px; text-align: center;">
+                                        {{ field.value }}
+                                    </span>
+                                </div>
+                                {% if field.help_text %}
+                                <div class="form-text text-muted mt-1 small">{{ field.help_text }}</div>
+                                {% endif %}
+                                {% for error in field.errors %}
+                                <div class="text-danger small mt-1">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="mt-4 pt-3 border-top d-flex gap-2 justify-content-end">
+                        <a href="{% url 'trading:dashboard' %}" class="btn btn-outline-secondary px-4">
+                            {% translate "Cancelar" %}
+                        </a>
+                        <button type="submit" class="btn btn-primary px-5">
+                            <i class="fas fa-save me-2"></i>{% translate "Salvar Cores" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interactive Live Preview -->
+    <div class="col-xl-6">
+        <div class="preview-box">
+            <div>
+                <div class="preview-title">
+                    <i class="fas fa-eye" style="color:var(--dash-accent2);"></i>
+                    {% translate "Visualização em Tempo Real" %}
+                </div>
+                
+                <!-- Mock Badges row -->
+                <div class="card mb-4 bg-transparent border-secondary">
+                    <div class="card-body py-3">
+                        <div class="small text-muted fw-bold mb-3 text-uppercase">{% translate "1. Identificação de Instrumentos" %}</div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <div>
+                                <span class="mock-badge" id="preview-ativo">VALE3</span>
+                                <span class="d-block text-muted small text-center mt-1">Ativo</span>
+                            </div>
+                            <div>
+                                <span class="mock-badge" id="preview-call">VALEF720</span>
+                                <span class="d-block text-muted small text-center mt-1">CALL</span>
+                            </div>
+                            <div>
+                                <span class="mock-badge" id="preview-put">VALER720</span>
+                                <span class="d-block text-muted small text-center mt-1">PUT</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mock Table row representing quantities (Buy vs Sell) -->
+                <div class="card bg-transparent border-secondary">
+                    <div class="card-body py-3">
+                        <div class="small text-muted fw-bold mb-3 text-uppercase">{% translate "2. Sentido da Operação (Sinal da Quantidade)" %}</div>
+                        
+                        <!-- Row 1: Positive quantity = Buy -->
+                        <div class="mock-row">
+                            <div>
+                                <span class="fw-bold text-light">PETR4</span>
+                                <span class="text-muted ms-2 small">Ordem #1084</span>
+                            </div>
+                            <div class="text-end">
+                                <span class="mock-badge" id="preview-compra-badge">COMPRA</span>
+                                <div class="mt-1 font-monospace fw-bold" id="preview-compra-qty" style="font-size: 0.85rem;">+1.000 Qtd</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Row 2: Negative quantity = Sell -->
+                        <div class="mock-row">
+                            <div>
+                                <span class="fw-bold text-light">PETRL280</span>
+                                <span class="text-muted ms-2 small">Ordem #1085</span>
+                            </div>
+                            <div class="text-end">
+                                <span class="mock-badge" id="preview-venda-badge">VENDA</span>
+                                <div class="mt-1 font-monospace fw-bold" id="preview-venda-qty" style="font-size: 0.85rem;">-1.000 Qtd</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-4 bg-dark-subtle border-0">
+                <div class="card-body text-center p-3 text-muted small">
+                    <i class="fas fa-info-circle me-1"></i>
+                    {% translate "As alterações aplicadas aqui afetarão imediatamente todas as grades de opções, histórico de ordens, tabelas de posições consolidadas e listas de ativos do sistema." %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Inputs
+    const pickerCompra = document.getElementById("id_compra_color");
+    const pickerVenda  = document.getElementById("id_venda_color");
+    const pickerCall   = document.getElementById("id_call_color");
+    const pickerPut    = document.getElementById("id_put_color");
+    const pickerAtivo  = document.getElementById("id_ativo_color");
+
+    // Preview elements
+    const previewAtivo = document.getElementById("preview-ativo");
+    const previewCall  = document.getElementById("preview-call");
+    const previewPut   = document.getElementById("preview-put");
+    const previewCompraBadge = document.getElementById("preview-compra-badge");
+    const previewCompraQty   = document.getElementById("preview-compra-qty");
+    const previewVendaBadge  = document.getElementById("preview-venda-badge");
+    const previewVendaQty    = document.getElementById("preview-venda-qty");
+
+    // Color conversion utilities
+    function hexToRgba(hex, alpha = 0.08) {
+        let c;
+        if(/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)){
+            c= hex.substring(1).split('');
+            if(c.length== 3){
+                c= [c[0], c[0], c[1], c[1], c[2], c[2]];
+            }
+            c= '0x' + c.join('');
+            return 'rgba('+[(c>>16)&255, (c>>8)&255, c&255].join(',')+','+alpha+')';
+        }
+        return hex;
+    }
+
+    // Function to apply colors to previews
+    function updatePreview() {
+        const cCompra = pickerCompra.value;
+        const cVenda  = pickerVenda.value;
+        const cCall   = pickerCall.value;
+        const cPut    = pickerPut.value;
+        const cAtivo  = pickerAtivo.value;
+
+        // Update hex value text labels
+        document.getElementById("label-id_compra_color").innerText = cCompra.toUpperCase();
+        document.getElementById("label-id_venda_color").innerText = cVenda.toUpperCase();
+        document.getElementById("label-id_call_color").innerText = cCall.toUpperCase();
+        document.getElementById("label-id_put_color").innerText = cPut.toUpperCase();
+        document.getElementById("label-id_ativo_color").innerText = cAtivo.toUpperCase();
+
+        // 1. Ativo Preview
+        previewAtivo.style.borderColor = cAtivo;
+        previewAtivo.style.color = cAtivo;
+        previewAtivo.style.backgroundColor = hexToRgba(cAtivo, 0.08);
+
+        // 2. CALL Preview
+        previewCall.style.borderColor = cCall;
+        previewCall.style.color = cCall;
+        previewCall.style.backgroundColor = hexToRgba(cCall, 0.08);
+
+        // 3. PUT Preview
+        previewPut.style.borderColor = cPut;
+        previewPut.style.color = cPut;
+        previewPut.style.backgroundColor = hexToRgba(cPut, 0.08);
+
+        // 4. Compra Preview (Qty & Badge)
+        previewCompraBadge.style.borderColor = cCompra;
+        previewCompraBadge.style.color = cCompra;
+        previewCompraBadge.style.backgroundColor = hexToRgba(cCompra, 0.08);
+        previewCompraQty.style.color = cCompra;
+
+        // 5. Venda Preview (Qty & Badge)
+        previewVendaBadge.style.borderColor = cVenda;
+        previewVendaBadge.style.color = cVenda;
+        previewVendaBadge.style.backgroundColor = hexToRgba(cVenda, 0.08);
+        previewVendaQty.style.color = cVenda;
+    }
+
+    // Listeners
+    [pickerCompra, pickerVenda, pickerCall, pickerPut, pickerAtivo].forEach(picker => {
+        if(picker) {
+            picker.addEventListener("input", updatePreview);
+        }
+    });
+
+    // Run initial rendering
+    updatePreview();
+});
+</script>
+{% endblock %}

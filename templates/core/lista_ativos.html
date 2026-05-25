@@ -78,7 +78,7 @@
                     <tbody>
                         {% for ativo in ativos %}
                         <tr>
-                            <td><span class="badge bg-info text-dark">{{ ativo.ativo_objeto }}</span></td>
+                            <td><span class="badge-ativo">{{ ativo.ativo_objeto }}</span></td>
                             <td><strong><a href="{% url 'core:detalhe_ativo' ativo.ticker %}">{{ ativo.ticker }}</a></strong></td>
                             <td>{{ ativo.tipo_opcao|default:"-" }}</td>
                             <td>{% if ativo.preco_exercicio %}R$ {{ ativo.preco_exercicio|floatformat:2 }}{% else %}-{% endif %}</td>
@@ -190,9 +190,9 @@
                         <thead>
                             <!-- Cabeçalho Principal -->
                             <tr>
-                                <th colspan="6" class="bg-success text-white py-2" style="width: 45%;">CALLS (Opções de Compra)</th>
+                                <th colspan="6" class="bg-call text-white py-2" style="width: 45%;">CALLS (Opções de Compra)</th>
                                 <th class="bg-dark text-white py-2" style="width: 10%;">STRIKE</th>
-                                <th colspan="6" class="bg-danger text-white py-2" style="width: 45%;">PUTS (Opções de Venda)</th>
+                                <th colspan="6" class="bg-put text-dark py-2" style="width: 45%;">PUTS (Opções de Venda)</th>
                             </tr>
                             <!-- Sub Cabeçalho -->
                             <tr class="table-light text-muted small">
@@ -218,7 +218,7 @@
                             <tr>
                                 <!-- Lado CALLs -->
                                 {% if option.call %}
-                                    <td class="fw-bold"><a href="{% url 'core:detalhe_ativo' option.call.ticker %}" class="text-success text-decoration-none">{{ option.call.ticker }}</a></td>
+                                    <td class="fw-bold"><a href="{% url 'core:detalhe_ativo' option.call.ticker %}" class="color-call text-decoration-none">{{ option.call.ticker }}</a></td>
                                     <td class="text-muted small">{% if option.call_hist %}R$ {{ option.call_hist.volume_financeiro|floatformat:2 }}{% else %}-{% endif %}</td>
                                     <td class="text-muted small">{% if option.call_hist %}{{ option.call_hist.quantidade_contratos }}{% else %}-{% endif %}</td>
                                     <td class="text-muted small">{% if option.call_hist and option.call_hist.vwap_calculado > 0 %}R$ {{ option.call_hist.vwap_calculado|floatformat:2 }}{% else %}-{% endif %}</td>
@@ -244,7 +244,7 @@
                                     <td class="text-muted small">{% if option.put_hist and option.put_hist.vwap_calculado > 0 %}R$ {{ option.put_hist.vwap_calculado|floatformat:2 }}{% else %}-{% endif %}</td>
                                     <td class="text-muted small">{% if option.put_hist %}{{ option.put_hist.quantidade_contratos }}{% else %}-{% endif %}</td>
                                     <td class="text-muted small">{% if option.put_hist %}R$ {{ option.put_hist.volume_financeiro|floatformat:2 }}{% else %}-{% endif %}</td>
-                                    <td class="fw-bold"><a href="{% url 'core:detalhe_ativo' option.put.ticker %}" class="text-danger text-decoration-none">{{ option.put.ticker }}</a></td>
+                                    <td class="fw-bold"><a href="{% url 'core:detalhe_ativo' option.put.ticker %}" class="color-put text-decoration-none">{{ option.put.ticker }}</a></td>
                                 {% else %}
                                     <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
                                 {% endif %}

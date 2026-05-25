@@ -438,7 +438,7 @@ def criar_rolagem(request):
                     leg.save()
             
             recalcular_rolagem(rolagem)
-            messages.success(request, f"Rolagem '{rolagem.nome}' criada com sucesso!")
+            messages.success(request, f"Spread '{rolagem.nome}' criado com sucesso!")
             return redirect('trading:lista_rolagens')
     else:
         form = RolagemForm()
@@ -447,7 +447,7 @@ def criar_rolagem(request):
     return render(request, 'trading/rolagem_form.html', {
         'form': form, 
         'formset': formset, 
-        'titulo': 'Nova Rolagem'
+        'titulo': 'Novo Spread'
     })
 
 @login_required
@@ -497,7 +497,7 @@ def editar_rolagem(request, slug):
                     leg.save()
             
             recalcular_rolagem(rolagem)
-            messages.success(request, "Rolagem atualizada e histórico recalculado.")
+            messages.success(request, "Spread atualizado e histórico recalculado.")
             return redirect('trading:detalhe_rolagem', slug=rolagem.slug)
     else:
         form = RolagemForm(instance=rolagem)
@@ -510,7 +510,7 @@ def editar_rolagem(request, slug):
     return render(request, 'trading/rolagem_form.html', {
         'form': form, 
         'formset': formset, 
-        'titulo': 'Editar Rolagem'
+        'titulo': 'Editar Spread'
     })
 
 @login_required
@@ -518,20 +518,95 @@ def arquivar_rolagem(request, slug):
     rolagem = get_object_or_404(Rolagem, usuario=request.user, slug=slug)
     rolagem.status = 'ARQUIVADA' if rolagem.status == 'ATIVA' else 'ATIVA'
     rolagem.save()
-    status_str = "arquivada" if rolagem.status == 'ARQUIVADA' else "reativada"
-    messages.success(request, f"Rolagem {status_str} com sucesso.")
+    status_str = "arquivado" if rolagem.status == 'ARQUIVADA' else "reativado"
+    messages.success(request, f"Spread {status_str} com sucesso.")
     return redirect('trading:lista_rolagens')
 
 @login_required
 def excluir_rolagem(request, slug):
     rolagem = get_object_or_404(Rolagem, usuario=request.user, slug=slug)
     rolagem.delete()
-    messages.success(request, "Rolagem excluída permanentemente.")
+    messages.success(request, "Spread excluído permanentemente.")
     return redirect('trading:lista_rolagens')
 
 @login_required
 def recalcular_todas_rolagens_view(request):
     """Trigger manual de recálculo de todas as rolagens do usuário."""
     count = recalcular_todas_rolagens()
-    messages.success(request, f"{count} rolagens recalculadas com sucesso.")
+    messages.success(request, f"{count} spreads recalculados com sucesso.")
     return redirect('trading:lista_rolagens')
+
+
+@login_required
+def dashboard(request):
+    """
+    Dashboard principal do usuário — visão consolidada de KPIs, estruturas,
+    spreads monitorados e relatório de desempenho.
+    """
+    from django.db.models import Sum, Max
+    from core.models import HistoricoPreco
+    from .services import get_performance_report
+
+    # --- Estruturas ---
+    estruturas = Estrutura.objects.filter(usuario=request.user)
+    estrutura_sem_estrutura = estruturas.filter(slug='sem-estrutura').first()
+    if estrutura_sem_estrutura and not estrutura_sem_estrutura.ordens.exists():
+        estruturas = estruturas.exclude(slug='sem-estrutura')
+
+    estruturas_ativas = list(estruturas.filter(status='ABERTA'))
+
+    total_pl_realizado = estruturas.aggregate(Sum('pl_realizado'))['pl_realizado__sum'] or 0
+    total_pl_aberto    = estruturas.aggregate(Sum('pl_aberto'))['pl_aberto__sum'] or 0
+    valor_total_carteira = estruturas.aggregate(Sum('valor_total'))['valor_total__sum'] or 0
+    total_exposicao    = estruturas.filter(status='ABERTA').aggregate(Sum('exposicao_atual'))['exposicao_atual__sum'] or 0
+
+    # Sparklines por estrutura (últimos 60 snapshots)
+    sparklines = {}
+    for est in estruturas_ativas:
+        snaps = list(est.historico_snapshots.order_by('-data')[:60])
+        snaps.reverse()
+        sparklines[est.id] = {
+            'datas': [s.data.strftime('%d/%m') for s in snaps],
+            'valores': [float(s.valor_total) for s in snaps],
+        }
+
+    # --- Spreads ---
+    spreads_ativos = list(Rolagem.objects.filter(usuario=request.user, status='ATIVA'))
+
+    # --- Última data do banco ---
+    ultima_data = HistoricoPreco.objects.aggregate(Max('data_pregao'))['data_pregao__max']
+
+    # --- Relatório de Desempenho ---
+    report = get_performance_report(request.user)
+    if report:
+        weekly_labels  = json.dumps(report['weekly']['labels'])
+        weekly_values  = json.dumps(report['weekly']['values'])
+        monthly_labels = json.dumps(report['monthly']['labels'])
+        monthly_values = json.dumps(report['monthly']['values'])
+    else:
+        weekly_labels = weekly_values = monthly_labels = monthly_values = json.dumps([])
+
+    # Sparklines serializados para o template
+    sparklines_json = json.dumps({str(k): v for k, v in sparklines.items()})
+
+    context = {
+        # KPIs
+        'total_pl_realizado': total_pl_realizado,
+        'total_pl_aberto': total_pl_aberto,
+        'valor_total_carteira': valor_total_carteira,
+        'total_exposicao': total_exposicao,
+        'ultima_data': ultima_data,
+        'num_estruturas_ativas': len(estruturas_ativas),
+        'num_spreads_ativos': len(spreads_ativos),
+        # Módulos
+        'estruturas_ativas': estruturas_ativas,
+        'spreads_ativos': spreads_ativos,
+        'sparklines_json': sparklines_json,
+        # Relatórios
+        'weekly_labels': weekly_labels,
+        'weekly_values': weekly_values,
+        'monthly_labels': monthly_labels,
+        'monthly_values': monthly_values,
+        'report_empty': report is None,
+    }
+    return render(request, 'trading/dashboard.html', context)

@@ -29,7 +29,7 @@ def apenas_admin(user):
 @login_required
 def home(request):
     if not request.user.is_staff and not request.user.is_superuser:
-        return redirect('trading:dashboard_estruturas')
+        return redirect('trading:dashboard')
     
     hoje = timezone.now().date()
     
@@ -680,7 +680,7 @@ def recalcular_rolagens(request):
     """Recalcula todas as rolagens de todos os usuários."""
     from trading.services import recalcular_todas_rolagens
     count = recalcular_todas_rolagens()
-    messages.success(request, f"Sucesso! {count} rolagens foram recalculadas.")
+    messages.success(request, f"Sucesso! {count} spreads foram recalculados.")
     return redirect('core:home')
 
 @user_passes_test(apenas_admin)

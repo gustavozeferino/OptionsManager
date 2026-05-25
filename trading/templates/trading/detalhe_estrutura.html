@@ -46,7 +46,7 @@
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body px-2 py-3 text-center">
                 <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Aberto</h6>
-                <h5 class="mb-0 {% if estrutura.pl_aberto > 0 %}text-success{% elif estrutura.pl_aberto < 0 %}text-danger{% endif %}" style="font-size: 1.1rem;">
+                <h5 class="mb-0 {% if estrutura.pl_aberto > 0 %}color-compra{% elif estrutura.pl_aberto < 0 %}color-venda{% endif %}" style="font-size: 1.1rem;">
                     R$ {{ estrutura.pl_aberto|floatformat:2|intcomma }}
                 </h5>
             </div>
@@ -56,17 +56,17 @@
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body px-2 py-3 text-center">
                 <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Realizado</h6>
-                <h5 class="mb-0 {% if estrutura.pl_realizado > 0 %}text-success{% elif estrutura.pl_realizado < 0 %}text-danger{% endif %}" style="font-size: 1.1rem;">
+                <h5 class="mb-0 {% if estrutura.pl_realizado > 0 %}color-compra{% elif estrutura.pl_realizado < 0 %}color-venda{% endif %}" style="font-size: 1.1rem;">
                     R$ {{ estrutura.pl_realizado|floatformat:2|intcomma }}
                 </h5>
             </div>
         </div>
     </div>
     <div class="col-md-4 col-lg-2">
-        <div class="card shadow-sm border-0 h-100 bg-light">
+        <div class="card shadow-sm border-0 h-100">
             <div class="card-body px-2 py-3 text-center">
                 <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Total</h6>
-                <h5 class="mb-0" style="font-size: 1.1rem;">
+                <h5 class="mb-0 {% if estrutura.valor_total > 0 %}color-compra{% elif estrutura.valor_total < 0 %}color-venda{% endif %}" style="font-size: 1.1rem;">
                     R$ {{ estrutura.valor_total|floatformat:2|intcomma }}
                 </h5>
             </div>
@@ -76,7 +76,7 @@
         <div class="card shadow-sm border-0 h-100 border-start border-info border-4">
             <div class="card-body px-2 py-3 text-center">
                 <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">Exposição</h6>
-                <h5 class="mb-0 {% if estrutura.exposicao_atual > 0 %}text-success{% elif estrutura.exposicao_atual < 0 %}text-danger{% else %}text-info{% endif %}" style="font-size: 1.1rem;">
+                <h5 class="mb-0 {% if estrutura.exposicao_atual > 0 %}color-compra{% elif estrutura.exposicao_atual < 0 %}color-venda{% else %}text-info{% endif %}" style="font-size: 1.1rem;">
                     R$ {{ estrutura.exposicao_atual|floatformat:2|intcomma }}
                 </h5>
             </div>
@@ -107,7 +107,7 @@
 <div class="row mb-4">
     <div class="col-md-6">
         <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white pt-3 pb-2">
+            <div class="card-header pt-3 pb-2">
                 <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i> Evolução Diária (Equity)</h5>
             </div>
             <div class="card-body">
@@ -117,7 +117,7 @@
     </div>
     <div class="col-md-6">
         <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white pt-3 pb-2">
+            <div class="card-header pt-3 pb-2">
                 <h5 class="card-title mb-0"><i class="fas fa-chart-bar me-2"></i> Exposição Diária</h5>
             </div>
             <div class="card-body">
@@ -131,7 +131,7 @@
     <!-- Posições Abertas -->
     <div class="col-12 mb-4">
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-white pt-3 pb-2">
+            <div class="card-header pt-3 pb-2">
                 <h5 class="card-title mb-0 text-success"><i class="fas fa-folder-open me-2"></i> Posições Abertas</h5>
             </div>
             <div class="card-body p-0">
@@ -157,7 +157,7 @@
                             <tr>
                                 <td class="fw-bold">{{ pos.ativo.ticker }}</td>
                                 <td>
-                                    <span class="badge {% if pos.ativo.tipo_display == 'CALL' %}bg-success{% elif pos.ativo.tipo_display == 'PUT' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                    <span class="{% if pos.ativo.tipo_display == 'CALL' %}badge-call{% elif pos.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %}">
                                         {{ pos.ativo.tipo_display }}
                                     </span>
                                 </td>
@@ -166,8 +166,7 @@
                                     {% if pos.ativo.data_expiracao %}{{ pos.ativo.data_expiracao|date:"d/m/y" }}{% else %}-{% endif %}
                                 </td>
                                 <td class="text-end">
-                                    <span
-                                        class="badge {% if pos.quantidade_atual > 0 %}bg-success{% elif pos.quantidade_atual < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
+                                    <span class="{% if pos.quantidade_atual > 0 %}badge-compra{% elif pos.quantidade_atual < 0 %}badge-venda{% else %}badge bg-secondary{% endif %}">
                                         {{ pos.quantidade_atual }}
                                     </span>
                                 </td>
@@ -178,15 +177,15 @@
                                     {{ pos.data_ultimo_preco|date:"d/m/y" }}
                                     {% endif %}</td>
                                 <td
-                                    class="text-end {% if pos.pl_realizado_acumulado > 0 %}text-success{% elif pos.pl_realizado_acumulado < 0 %}text-danger{% endif %}">
+                                    class="text-end {% if pos.pl_realizado_acumulado > 0 %}color-compra{% elif pos.pl_realizado_acumulado < 0 %}color-venda{% endif %}">
                                     {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
                                 </td>
                                 <td
-                                    class="text-end {% if pos.pl_aberto_calc > 0 %}text-success{% elif pos.pl_aberto_calc < 0 %}text-danger{% endif %}">
+                                    class="text-end {% if pos.pl_aberto_calc > 0 %}color-compra{% elif pos.pl_aberto_calc < 0 %}color-venda{% endif %}">
                                     {{ pos.pl_aberto_calc|floatformat:2|intcomma }}
                                 </td>
                                 <td
-                                    class="text-end fw-bold {% if pos.pl_total > 0 %}text-success{% elif pos.pl_total < 0 %}text-danger{% endif %}">
+                                    class="text-end fw-bold {% if pos.pl_total > 0 %}color-compra{% elif pos.pl_total < 0 %}color-venda{% endif %}">
                                     {{ pos.pl_total|floatformat:2|intcomma }}
                                 </td>
                             </tr>
@@ -205,7 +204,7 @@
     <!-- Posições Fechadas -->
     <div class="col-12 mb-4">
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-white pt-3 pb-2">
+            <div class="card-header pt-3 pb-2">
                 <h5 class="card-title mb-0 text-muted"><i class="fas fa-folder me-2"></i> Posições Finalizadas</h5>
             </div>
             <div class="card-body p-0">
@@ -227,13 +226,13 @@
                             <tr>
                                 <td class="fw-bold">{{ pos.ativo.ticker }}</td>
                                 <td>
-                                    <span class="badge {% if pos.ativo.tipo_display == 'CALL' %}bg-success{% elif pos.ativo.tipo_display == 'PUT' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                    <span class="{% if pos.ativo.tipo_display == 'CALL' %}badge-call{% elif pos.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %}">
                                         {{ pos.ativo.tipo_display }}
                                     </span>
                                 </td>
                                 <td class="text-end">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
                                 <td
-                                    class="text-end fw-bold {% if pos.pl_realizado_acumulado > 0 %}text-success{% elif pos.pl_realizado_acumulado < 0 %}text-danger{% endif %}">
+                                    class="text-end fw-bold {% if pos.pl_realizado_acumulado > 0 %}color-compra{% elif pos.pl_realizado_acumulado < 0 %}color-venda{% endif %}">
                                     R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
                                 </td>
                                 <td class="text-center text-muted">{{ pos.data_inicial|date:"d/m/Y" }}</td>
@@ -255,7 +254,7 @@
 
 <!-- Tabela de Ordens -->
 <div class="card shadow-sm border-0 mb-5">
-    <div class="card-header bg-white pt-3 pb-2 d-flex justify-content-between align-items-center">
+    <div class="card-header pt-3 pb-2 d-flex justify-content-between align-items-center">
         <h5 class="card-title mb-0"><i class="fas fa-list me-2"></i> Histórico de Ordens</h5>
     </div>
     <div class="card-body p-0">
@@ -281,7 +280,7 @@
                         <td>{{ ordem.data|date:"d/m/Y" }}</td>
                         <td class="fw-bold">{{ ordem.ativo.ticker }}</td>
                         <td>
-                            <span class="badge {% if ordem.ativo.tipo_display == 'CALL' %}bg-success{% elif ordem.ativo.tipo_display == 'PUT' %}bg-danger{% else %}bg-secondary{% endif %} badge-sm">
+                            <span class="{% if ordem.ativo.tipo_display == 'CALL' %}badge-call{% elif ordem.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %} badge-sm">
                                 {{ ordem.ativo.tipo_display }}
                             </span>
                         </td>
@@ -297,11 +296,9 @@
                         </td>
                         <td class="text-center">
                             {% if ordem.quantidade > 0 %}
-                            <span
-                                class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">COMPRA</span>
+                            <span class="badge-compra px-2 py-1">COMPRA</span>
                             {% else %}
-                            <span
-                                class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">VENDA</span>
+                            <span class="badge-venda px-2 py-1">VENDA</span>
                             {% endif %}
                         </td>
                         <td class="text-end">{{ ordem.quantidade|stringformat:"i"|cut:"-" }}</td>
@@ -326,7 +323,7 @@
         </div>
     </div>
     {% if page_obj.has_other_pages %}
-    <div class="card-footer bg-white border-top-0 py-3">
+    <div class="card-footer border-top-0 py-3">
         <nav aria-label="Navegação de ordens">
             <ul class="pagination pagination-sm justify-content-center mb-0">
                 {% if page_obj.has_previous %}
@@ -382,22 +379,27 @@
         }
 
         // Equity Chart
-        var chartEquity = echarts.init(document.getElementById('chart-estrutura'));
+        var chartEquity = echarts.init(document.getElementById('chart-estrutura'), 'dark');
+        const colPos = getComputedStyle(document.documentElement).getPropertyValue('--color-compra').trim() || '#10b981';
+        const colNeg = getComputedStyle(document.documentElement).getPropertyValue('--color-venda').trim() || '#ef4444';
+        const colAtivo = getComputedStyle(document.documentElement).getPropertyValue('--color-ativo').trim() || '#6c63ff';
+
         var optionEquity = {
+            backgroundColor: 'transparent',
             tooltip: { trigger: 'axis' },
             grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
             xAxis: { type: 'category', boundaryGap: false, data: datas },
-            yAxis: { type: 'value' },
+            yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
             series: [{
                 name: 'Patrimônio',
                 type: 'line',
                 smooth: true,
-                lineStyle: { width: 3, color: '#198754' },
-                itemStyle: { color: '#198754' },
+                lineStyle: { width: 3, color: colPos },
+                itemStyle: { color: colPos },
                 areaStyle: {
                     color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(25, 135, 84, 0.5)' },
-                        { offset: 1, color: 'rgba(25, 135, 84, 0.1)' }
+                        { offset: 0, color: colPos + '66' },
+                        { offset: 1, color: colPos + '00' }
                     ])
                 },
                 data: valores
@@ -412,22 +414,23 @@
             valoresExposicao = JSON.parse(rawExposicao);
         } catch (e) { console.error(e); }
 
-        var chartExposicao = echarts.init(document.getElementById('chart-exposicao'));
+        var chartExposicao = echarts.init(document.getElementById('chart-exposicao'), 'dark');
         var optionExposicao = {
+            backgroundColor: 'transparent',
             tooltip: { trigger: 'axis' },
             grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
             xAxis: { type: 'category', boundaryGap: false, data: datas },
-            yAxis: { type: 'value' },
+            yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
             series: [{
                 name: 'Exposição',
                 type: 'line',
                 smooth: true,
-                lineStyle: { width: 3, color: '#0dcaf0' },
-                itemStyle: { color: '#0dcaf0' },
+                lineStyle: { width: 3, color: colAtivo },
+                itemStyle: { color: colAtivo },
                 areaStyle: {
                     color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(13, 202, 240, 0.5)' },
-                        { offset: 1, color: 'rgba(13, 202, 240, 0.1)' }
+                        { offset: 0, color: colAtivo + '66' },
+                        { offset: 1, color: colAtivo + '00' }
                     ])
                 },
                 data: valoresExposicao

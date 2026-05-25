@@ -4,7 +4,10 @@ from . import views
 app_name = 'trading'
 
 urlpatterns = [
-    # Dashboard (Lista de Estruturas)
+    # Dashboard Principal do Usuário
+    path('dashboard/', views.dashboard, name='dashboard'),
+
+    # Estruturas
     path('estruturas/', views.dashboard_estruturas, name='dashboard_estruturas'),
     path('estruturas/nova/', views.criar_estrutura, name='criar_estrutura'),
     
@@ -27,12 +30,12 @@ urlpatterns = [
     # Relatórios
     path('relatorios/', views.relatorio_performance, name='relatorio_performance'),
 
-    # Rolagem
-    path('rolagem/', views.lista_rolagens, name='lista_rolagens'),
-    path('rolagem/nova/', views.criar_rolagem, name='criar_rolagem'),
-    path('rolagem/recalcular-todas/', views.recalcular_todas_rolagens_view, name='recalcular_todas_rolagens'),
-    path('rolagem/<slug:slug>/', views.detalhe_rolagem, name='detalhe_rolagem'),
-    path('rolagem/<slug:slug>/editar/', views.editar_rolagem, name='editar_rolagem'),
-    path('rolagem/<slug:slug>/arquivar/', views.arquivar_rolagem, name='arquivar_rolagem'),
-    path('rolagem/<slug:slug>/excluir/', views.excluir_rolagem, name='excluir_rolagem'),
+    # Spreads
+    path('spreads/', views.lista_rolagens, name='lista_rolagens'),
+    path('spreads/novo/', views.criar_rolagem, name='criar_rolagem'),
+    path('spreads/recalcular-todos/', views.recalcular_todas_rolagens_view, name='recalcular_todas_rolagens'),
+    path('spreads/<slug:slug>/', views.detalhe_rolagem, name='detalhe_rolagem'),
+    path('spreads/<slug:slug>/editar/', views.editar_rolagem, name='editar_rolagem'),
+    path('spreads/<slug:slug>/arquivar/', views.arquivar_rolagem, name='arquivar_rolagem'),
+    path('spreads/<slug:slug>/excluir/', views.excluir_rolagem, name='excluir_rolagem'),
 ]

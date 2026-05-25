@@ -128,8 +128,8 @@ class Rolagem(models.Model):
         return f"{self.nome} ({self.usuario.username})"
         
     class Meta:
-        verbose_name = "Rolagem"
-        verbose_name_plural = "Rolagens"
+        verbose_name = "Spread"
+        verbose_name_plural = "Spreads"
         ordering = ['-criado_em']
 
 class RolagemLeg(models.Model):
@@ -149,8 +149,8 @@ class RolagemSnapshot(models.Model):
     detalhes_legs = models.JSONField(default=dict) # {ticker: {'vwap': float, 'fechamento': float, 'negocios': int}}
 
     class Meta:
-        verbose_name = "Snapshot de Rolagem"
-        verbose_name_plural = "Snapshots de Rolagens"
+        verbose_name = "Snapshot de Spread"
+        verbose_name_plural = "Snapshots de Spreads"
         unique_together = ('rolagem', 'data')
         ordering = ['-data']
 

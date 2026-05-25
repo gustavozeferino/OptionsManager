@@ -5,11 +5,11 @@
 {% block content %}
 <div class="container mt-4">
     <div class="card shadow-sm border-0 mb-4">
-        <div class="card-body bg-light">
+        <div class="card-body">
             <div class="row align-items-center text-center text-md-start">
                 <div class="col-md-3">
-                    <h1 class="text-primary fw-bold mb-0">{{ ativo.ticker }}</h1>
-                    <span class="badge {% if ativo.tipo_opcao == 'CALL' %}bg-success{% else %}bg-danger{% endif %}">
+                    <h1 class="color-ativo fw-bold mb-0">{{ ativo.ticker }}</h1>
+                    <span class="{% if ativo.tipo_opcao == 'CALL' %}badge-call{% else %}badge-put{% endif %}">
                         {{ ativo.tipo_opcao }}
                     </span>
                 </div>
@@ -26,18 +26,18 @@
                         <div class="col-6 col-md-3">
                             <small class="text-muted d-block text-uppercase">Status / Dias</small>
                             {% if dias_para_vencer < 0 %}
-                                <span class="badge bg-danger text-uppercase">Expirada</span>
+                                <span class="badge-venda text-uppercase">Expirada</span>
                             {% elif dias_para_vencer == 0 %}
                                 <h5 class="fw-bold text-warning text-uppercase">Vence Hoje</h5>
                             {% else %}
-                                <h5 class="{% if dias_para_vencer < 5 %}text-danger{% endif %}">
+                                <h5 class="{% if dias_para_vencer < 5 %}color-venda{% endif %}">
                                     {{ dias_para_vencer }} dias
                                 </h5>
                             {% endif %}
                         </div>
                         <div class="col-6 col-md-3">
                             <small class="text-muted d-block text-uppercase">Ativo Objeto</small>
-                            <h5 class="fw-bold text-dark">{{ ativo.ativo_objeto }}</h5>
+                            <h5 class="fw-bold color-ativo">{{ ativo.ativo_objeto }}</h5>
                         </div>
                     </div>
                 </div>
@@ -46,7 +46,7 @@
     </div>
 
     <div class="card shadow-sm border-0 mb-4">
-        <div class="card-header bg-white border-0 pt-4">
+        <div class="card-header pt-4">
             <h5 class="card-title fw-bold text-uppercase mb-0">{{ ativo.ticker }} - Histórico de Preços</h5>
         </div>
         <div class="card-body p-2">
@@ -55,7 +55,7 @@
     </div>
 
     <div class="card shadow-sm border-0 mb-4">
-        <div class="card-header bg-white">
+        <div class="card-header">
             <h5 class="mb-0">Histórico de Negociação</h5>
         </div>
         <div class="table-responsive">

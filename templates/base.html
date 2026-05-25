@@ -7,6 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}OptionsManager{% endblock %}</title>
 
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
         integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
@@ -19,185 +24,278 @@
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 
+    <!-- OptionsManager Central Stylesheet -->
+    <link rel="stylesheet" href="{% static 'core/css/style.css' %}">
+
+    <!-- Dynamic Customizable Color System -->
+    <style>
+        :root {
+            {% if user.is_authenticated %}
+            --color-compra: {{ user.layout.compra_color }};
+            --color-venda: {{ user.layout.venda_color }};
+            --color-call: {{ user.layout.call_color }};
+            --color-put: {{ user.layout.put_color }};
+            --color-ativo: {{ user.layout.ativo_color }};
+            {% endif %}
+        }
+    </style>
+
     {% block extra_css %}{% endblock %}
 </head>
 
 <body>
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'core:home' %}">
-                <i class="fas fa-chart-line me-2"></i>OptionsManager
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
+    <div class="app-layout">
+        <!-- Mobile Header Navigation (only on mobile viewports) -->
+        <header class="mobile-header d-lg-none">
+            <button class="sidebar-toggle" id="mobile-sidebar-toggle" aria-label="Abrir Menu">
+                <i class="fas fa-bars"></i>
             </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    {% if user.is_authenticated %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'trading:dashboard_estruturas' %}">
-                            <i class="fas fa-layer-group me-1"></i>Minhas Estruturas
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'trading:relatorio_performance' %}">
-                            <i class="fas fa-chart-line me-1"></i>Relatórios
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'trading:lista_rolagens' %}">
-                            <i class="fas fa-sync-alt me-1"></i>Rolagem
-                        </a>
-                    </li>
-                    {% if user.is_staff %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'core:lista_ativos' %}">
-                            <i class="fas fa-home me-1"></i>Ativos
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'core:liquidez_vencimentos' %}">
-                            <i class="fas fa-chart-bar me-1"></i>Liquidez
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'core:consultar_open_interest' %}">
-                            <i class="fas fa-chart-pie me-1"></i>Open Interest
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'core:lista_logs' %}">
-                            <i class="fas fa-list-ul me-1"></i>Log de Acesso
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'core:db_viewer' %}">
-                            <i class="fas fa-table me-1"></i>Banco de Dados
-                        </a>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="navbarDadosB3" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-database me-1"></i>Dados B3
-                        </a>
-                        <ul class="dropdown-menu" aria-labelledby="navbarDadosB3">
-                            <li>
-                                <a class="dropdown-item" href="{% url 'dadosb3:upload' %}">
-                                    <i class="fas fa-upload me-2"></i>Upload de Arquivos
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="{% url 'dadosb3:dashboard' %}">
-                                    <i class="fas fa-chart-line me-2"></i>Dashboard B3
-                                </a>
-                            </li>
-                        </ul>
-                    </li>
-                    {% endif %}
-                    {% endif %}
-                </ul>
-                <ul class="navbar-nav">
-                    {% if user.is_authenticated %}
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button"
-                            data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-user me-1"></i>{{ user.username }}
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="{% url 'admin:index' %}">
-                                    <i class="fas fa-cog me-2"></i>Admin
-                                </a></li>
-                            <li>
-                                <hr class="dropdown-divider">
-                            </li>
-                            <li><a class="dropdown-item" href="{% url 'users:logout' %}">
-                                    <i class="fas fa-sign-out-alt me-2"></i>Sair
-                                </a></li>
-                        </ul>
-                    </li>
-                    {% else %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'users:login' %}">
-                            <i class="fas fa-sign-in-alt me-1"></i>Login
-                        </a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </div>
-        </div>
-    </nav>
-    <!-- Submenu Open Interest (Only on OI pages) -->
-    {% if request.resolver_match.url_name == 'consultar_open_interest' or request.resolver_match.url_name == 'grafico_open_interest' or request.resolver_match.url_name == 'barreiras_open_interest' or request.resolver_match.url_name == 'fluxo_open_interest' %}
-    <div class="bg-light border-bottom shadow-sm">
-        <div class="container">
-            <ul class="nav nav-pills py-2 small">
-                <li class="nav-item">
-                    <a class="nav-link {% if request.resolver_match.url_name == 'consultar_open_interest' %}active{% endif %}" 
-                       href="{% url 'core:consultar_open_interest' %}">
-                        <i class="fas fa-table me-1"></i>Contratos em Aberto
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if request.resolver_match.url_name == 'grafico_open_interest' %}active{% endif %}" 
-                       href="{% url 'core:grafico_open_interest' %}">
-                        <i class="fas fa-chart-bar me-1"></i>Gráfico de Posições
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if request.resolver_match.url_name == 'barreiras_open_interest' %}active{% endif %}" 
-                       href="{% url 'core:barreiras_open_interest' %}">
-                        <i class="fas fa-shield-alt me-1"></i>Barreiras
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if request.resolver_match.url_name == 'fluxo_open_interest' %}active{% endif %}" 
-                       href="{% url 'core:fluxo_open_interest' %}">
-                        <i class="fas fa-water me-1"></i>Fluxo das Posições
-                    </a>
-                </li>
-            </ul>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Messages -->
-    {% if messages %}
-    <div class="container mt-3">
-        {% for message in messages %}
-        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-            {% if message.tags == 'success' %}
-            <i class="fas fa-check-circle me-2"></i>
-            {% elif message.tags == 'error' %}
-            <i class="fas fa-exclamation-circle me-2"></i>
-            {% elif message.tags == 'warning' %}
-            <i class="fas fa-exclamation-triangle me-2"></i>
+            <span class="mobile-brand">
+                <i class="fas fa-chart-line me-2"></i>OptionsManager
+            </span>
+            {% if user.is_authenticated %}
+            <span class="user-pill small">
+                <i class="fas fa-user me-1"></i>{{ user.username }}
+            </span>
             {% else %}
-            <i class="fas fa-info-circle me-2"></i>
+            <a href="{% url 'users:login' %}" class="btn btn-sm btn-primary py-1 px-3">
+                <i class="fas fa-sign-in-alt me-1"></i>Entrar
+            </a>
             {% endif %}
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </header>
+
+        <!-- Sidebar Navigation Drawer -->
+        <aside class="app-sidebar" id="app-sidebar">
+            <div class="sidebar-header">
+                <a class="sidebar-brand" href="{% if user.is_authenticated %}{% url 'trading:dashboard' %}{% else %}{% url 'core:home' %}{% endif %}">
+                    <i class="fas fa-chart-line me-2"></i>OptionsManager
+                </a>
+                <button class="btn-close d-lg-none" id="mobile-sidebar-close" aria-label="Fechar Menu"></button>
+            </div>
+
+            <div class="sidebar-user">
+                {% if user.is_authenticated %}
+                    <div class="user-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="user-details">
+                        <span class="username">{{ user.username }}</span>
+                        <span class="role">{% if user.is_superuser %}Admin{% elif user.is_staff %}Staff{% else %}Trader{% endif %}</span>
+                    </div>
+                {% else %}
+                    <div class="user-avatar" style="opacity: 0.5;">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="user-details">
+                        <span class="username">Visitante</span>
+                        <span class="role">Não autenticado</span>
+                    </div>
+                {% endif %}
+            </div>
+
+            <nav class="sidebar-nav">
+                <ul class="nav-list">
+                    {% if user.is_authenticated %}
+                    <li class="nav-section">Operações</li>
+                    <li>
+                        <a href="{% url 'trading:dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' and request.resolver_match.app_name == 'trading' %}active{% endif %}">
+                            <i class="fas fa-tachometer-alt"></i><span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'trading:dashboard_estruturas' %}" class="nav-item {% if 'dashboard_estruturas' in request.resolver_match.url_name or 'detalhe_estrutura' in request.resolver_match.url_name or 'criar_estrutura' in request.resolver_match.url_name or 'adicionar_ordem' in request.resolver_match.url_name %}active{% endif %}">
+                            <i class="fas fa-layer-group"></i><span>Estruturas</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'trading:relatorio_performance' %}" class="nav-item {% if request.resolver_match.url_name == 'relatorio_performance' %}active{% endif %}">
+                            <i class="fas fa-chart-line"></i><span>Relatórios</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'trading:lista_rolagens' %}" class="nav-item {% if 'rolagem' in request.resolver_match.url_name or 'lista_rolagens' in request.resolver_match.url_name %}active{% endif %}">
+                            <i class="fas fa-exchange-alt"></i><span>Spreads</span>
+                        </a>
+                    </li>
+
+                    <li class="nav-section">Aparência</li>
+                    <li>
+                        <a href="{% url 'users:customizar_layout' %}" class="nav-item {% if request.resolver_match.url_name == 'customizar_layout' %}active{% endif %}">
+                            <i class="fas fa-palette"></i><span>Customizar Cores</span>
+                        </a>
+                    </li>
+
+                    {% if user.is_staff %}
+                    <li class="nav-section">Administrativo B3</li>
+                    <li>
+                        <a href="{% url 'core:lista_ativos' %}" class="nav-item {% if request.resolver_match.url_name == 'lista_ativos' or request.resolver_match.url_name == 'detalhe_ativo' %}active{% endif %}">
+                            <i class="fas fa-home"></i><span>Ativos</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'core:liquidez_vencimentos' %}" class="nav-item {% if request.resolver_match.url_name == 'liquidez_vencimentos' %}active{% endif %}">
+                            <i class="fas fa-chart-bar"></i><span>Liquidez</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'core:consultar_open_interest' %}" class="nav-item {% if 'open_interest' in request.resolver_match.url_name or 'fluxo_open_interest' in request.resolver_match.url_name or 'barreiras_open_interest' in request.resolver_match.url_name or 'grafico_open_interest' in request.resolver_match.url_name %}active{% endif %}">
+                            <i class="fas fa-chart-pie"></i><span>Open Interest</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'core:lista_logs' %}" class="nav-item {% if request.resolver_match.url_name == 'lista_logs' %}active{% endif %}">
+                            <i class="fas fa-list-ul"></i><span>Logs de Acesso</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'core:db_viewer' %}" class="nav-item {% if 'db_viewer' in request.resolver_match.url_name %}active{% endif %}">
+                            <i class="fas fa-table"></i><span>Banco de Dados</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'dadosb3:upload' %}" class="nav-item {% if request.resolver_match.url_name == 'upload' and request.resolver_match.app_name == 'dadosb3' %}active{% endif %}">
+                            <i class="fas fa-upload"></i><span>B3 Upload</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'dadosb3:dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' and request.resolver_match.app_name == 'dadosb3' %}active{% endif %}">
+                            <i class="fas fa-chart-area"></i><span>B3 Dashboard</span>
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <li class="nav-section">Conta</li>
+                    {% if user.is_superuser %}
+                    <li>
+                        <a href="{% url 'admin:index' %}" class="nav-item" target="_blank">
+                            <i class="fas fa-cog"></i><span>Admin Console</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li>
+                        <a href="{% url 'users:logout' %}" class="nav-item text-danger">
+                            <i class="fas fa-sign-out-alt"></i><span>Sair</span>
+                        </a>
+                    </li>
+
+                    {% else %}
+                    <li>
+                        <a href="{% url 'users:login' %}" class="nav-item active">
+                            <i class="fas fa-sign-in-alt"></i><span>Entrar (Login)</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Sidebar background backdrop (Mobile only) -->
+        <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+        <!-- Main Content Area -->
+        <div class="app-main">
+            <!-- Submenu Open Interest (Only on OI pages) -->
+            {% if request.resolver_match.url_name == 'consultar_open_interest' or request.resolver_match.url_name == 'grafico_open_interest' or request.resolver_match.url_name == 'barreiras_open_interest' or request.resolver_match.url_name == 'fluxo_open_interest' %}
+            <div class="sub-nav-wrapper">
+                <div class="container-fluid">
+                    <ul class="nav nav-pills py-1 small">
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'consultar_open_interest' %}active{% endif %}" 
+                               href="{% url 'core:consultar_open_interest' %}">
+                                <i class="fas fa-table me-1"></i>Contratos em Aberto
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'grafico_open_interest' %}active{% endif %}" 
+                               href="{% url 'core:grafico_open_interest' %}">
+                                <i class="fas fa-chart-bar me-1"></i>Gráfico de Posições
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'barreiras_open_interest' %}active{% endif %}" 
+                               href="{% url 'core:barreiras_open_interest' %}">
+                                <i class="fas fa-shield-alt me-1"></i>Barreiras
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'fluxo_open_interest' %}active{% endif %}" 
+                               href="{% url 'core:fluxo_open_interest' %}">
+                                <i class="fas fa-water me-1"></i>Fluxo das Posições
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Main Content container -->
+            <main class="content-container p-3 p-md-4">
+                <!-- Messages -->
+                {% if messages %}
+                <div class="messages-container mb-4">
+                    {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {% if message.tags == 'success' %}
+                        <i class="fas fa-check-circle me-2"></i>
+                        {% elif message.tags == 'error' %}
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        {% elif message.tags == 'warning' %}
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        {% else %}
+                        <i class="fas fa-info-circle me-2"></i>
+                        {% endif %}
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% block content %}{% endblock %}
+            </main>
+
+            <!-- Footer -->
+            <footer class="app-footer">
+                <p>&copy; {% now "Y" %} OptionsManager. Todos os direitos reservados.</p>
+            </footer>
         </div>
-        {% endfor %}
     </div>
-    {% endif %}
-
-    <!-- Main Content -->
-    <main class="container my-4">
-        {% block content %}{% endblock %}
-    </main>
-
-    <!-- Footer -->
-    <footer class="bg-light text-center text-muted py-3 mt-5">
-        <div class="container">
-            <p class="mb-0">&copy; {% now "Y" %} OptionsManager. Todos os direitos reservados.</p>
-        </div>
-    </footer>
 
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
         crossorigin="anonymous"></script>
+
+    <!-- Sidebar Responsive Toggle Handler -->
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const toggleBtn = document.getElementById("mobile-sidebar-toggle");
+        const closeBtn = document.getElementById("mobile-sidebar-close");
+        const sidebar = document.getElementById("app-sidebar");
+        const backdrop = document.getElementById("sidebar-backdrop");
+
+        if (toggleBtn && sidebar && backdrop) {
+            toggleBtn.addEventListener("click", function() {
+                sidebar.classList.add("show");
+                backdrop.classList.add("show");
+            });
+        }
+
+        if (closeBtn && sidebar && backdrop) {
+            closeBtn.addEventListener("click", function() {
+                sidebar.classList.remove("show");
+                backdrop.classList.remove("show");
+            });
+        }
+
+        if (backdrop && sidebar) {
+            backdrop.addEventListener("click", function() {
+                sidebar.classList.remove("show");
+                backdrop.classList.remove("show");
+            });
+        }
+    });
+    </script>
 
     {% block extra_js %}{% endblock %}
 </body>

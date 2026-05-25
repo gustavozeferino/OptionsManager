@@ -6,7 +6,7 @@ class RolagemForm(forms.ModelForm):
         model = Rolagem
         fields = ['nome', 'filtro_liquidez']
         widgets = {
-            'nome': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ex: Rolagem de Venda Coberta PETR4'}),
+            'nome': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ex: Spread PETR4 Call Jun/Jul'}),
             'filtro_liquidez': forms.NumberInput(attrs={'class': 'form-control'}),
         }
 
