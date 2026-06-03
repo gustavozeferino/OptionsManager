@@ -1,17 +1,77 @@
 {% extends 'base.html' %}
 {% load humanize %}
 
-{% block title %}Dashboard de Trading - OptionsManager{% endblock %}
+{% block title %}Estruturas — OptionsManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ─── KPI STRIP (same as dashboard) ─── */
+    .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+    .kpi-card {
+        background: var(--dash-card);
+        border: 1px solid var(--dash-border);
+        border-radius: 16px;
+        padding: 20px 22px;
+        position: relative;
+        overflow: hidden;
+        transition: transform .18s, box-shadow .18s;
+    }
+    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 36px rgba(0,0,0,.4); }
+    .kpi-card::before {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        border-radius: 16px 16px 0 0;
+    }
+    .kpi-card.accent1::before { background: linear-gradient(90deg, #6c63ff, #9c8cf8); }
+    .kpi-card.accent2::before { background: linear-gradient(90deg, #10b981, #34d399); }
+    .kpi-card.accent3::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .kpi-card.accent4::before { background: linear-gradient(90deg, #0ea5e9, #38bdf8); }
+    .kpi-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; color: var(--dash-muted); margin-bottom: 6px; }
+    .kpi-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+    .kpi-sub   { font-size: .75rem; color: var(--dash-muted); margin-top: 4px; }
+    .kpi-icon  { position: absolute; right: 18px; top: 18px; font-size: 1.5rem; opacity: .18; }
+    .val-pos { color: var(--color-compra) !important; }
+    .val-neg { color: var(--color-venda) !important; }
+    .val-neu { color: var(--dash-text); }
+
+    /* ─── TABLE ROWS ─── */
+    .est-name-link {
+        font-weight: 600;
+        font-size: .92rem;
+        color: var(--dash-text);
+        text-decoration: none;
+        transition: color .15s;
+    }
+    .est-name-link:hover { color: var(--dash-accent); }
+
+    .hover-lift-row { cursor: pointer; transition: background .15s; }
+    .hover-lift-row:hover { background-color: var(--dash-card-hover) !important; }
+
+    @media (max-width: 900px) {
+        .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 500px) {
+        .kpi-strip { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="fas fa-chart-pie me-2"></i> Dashboard de Trading</h2>
+
+{# ─── HEADER ─── #}
+<div class="d-flex justify-content-between align-items-center mb-4" style="padding-top:4px;">
     <div>
-        <a href="{% url 'trading:criar_estrutura' %}" class="btn btn-primary me-2">
+        <h4 class="mb-0 fw-bold" style="color:var(--dash-text);">
+            <i class="fas fa-layer-group me-2" style="color:var(--dash-accent);"></i>Estruturas
+        </h4>
+        <span style="font-size:.78rem; color:var(--dash-muted);">Gerenciamento de todas as estruturas de opções</span>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'trading:criar_estrutura' %}" class="btn btn-primary">
             <i class="fas fa-plus me-1"></i> Nova Estrutura
         </a>
-        <a href="{% url 'trading:upload_ordens' %}" class="btn btn-outline-primary me-2">
-            <i class="fas fa-file-upload me-1"></i> Importar Ordens
+        <a href="{% url 'trading:upload_ordens' %}" class="btn btn-outline-primary">
+            <i class="fas fa-file-upload me-1"></i> Importar
         </a>
         <a href="{% url 'trading:alocar_orfas' %}" class="btn btn-outline-secondary">
             <i class="fas fa-exchange-alt me-1"></i> Ordens sem Estrutura
@@ -19,252 +79,276 @@
     </div>
 </div>
 
-<!-- Resumo da Carteira -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card bg-primary text-white shadow-sm border-0">
-            <div class="card-body text-center">
-                <h6 class="text-uppercase opacity-75 small">PL Aberto Total</h6>
-                <h4 class="mb-0">R$ {{ total_pl_aberto|floatformat:2|intcomma }}</h4>
-            </div>
+{# ─── KPI STRIP ─── #}
+<div class="kpi-strip">
+    <div class="kpi-card accent1">
+        <i class="fas fa-wallet kpi-icon"></i>
+        <div class="kpi-label">P&amp;L Aberto Total</div>
+        <div class="kpi-value {% if total_pl_aberto > 0 %}val-pos{% elif total_pl_aberto < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ total_pl_aberto|floatformat:2|intcomma }}
+        </div>
+        <div class="kpi-sub">Posições em aberto</div>
+    </div>
+
+    <div class="kpi-card accent2">
+        <i class="fas fa-coins kpi-icon"></i>
+        <div class="kpi-label">P&amp;L Realizado Total</div>
+        <div class="kpi-value {% if total_pl_realizado > 0 %}val-pos{% elif total_pl_realizado < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ total_pl_realizado|floatformat:2|intcomma }}
+        </div>
+        <div class="kpi-sub">Operações encerradas</div>
+    </div>
+
+    <div class="kpi-card accent3">
+        <i class="fas fa-balance-scale kpi-icon"></i>
+        <div class="kpi-label">Exposição Líquida</div>
+        <div class="kpi-value {% if total_exposicao > 0 %}val-pos{% elif total_exposicao < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ total_exposicao|floatformat:2|intcomma }}
+        </div>
+        <div style="font-size: .75rem; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
+            <span class="val-pos" title="Exposição Comprada"><i class="fas fa-long-arrow-alt-up"></i> {{ exposicao_comprada_global|floatformat:2|intcomma }}</span>
+            <span style="color:var(--dash-muted); margin:0 4px;">|</span>
+            <span class="val-neg" title="Exposição Vendida"><i class="fas fa-long-arrow-alt-down"></i> {{ exposicao_vendida_global|floatformat:2|intcomma }}</span>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card bg-success text-white shadow-sm border-0">
-            <div class="card-body text-center">
-                <h6 class="text-uppercase opacity-75 small">PL Realizado Total</h6>
-                <h4 class="mb-0">R$ {{ total_pl_realizado|floatformat:2|intcomma }}</h4>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card bg-info text-white shadow-sm border-0">
-            <div class="card-body text-center">
-                <h6 class="text-uppercase opacity-75 small">Exposição Geral</h6>
-                <h4 class="mb-0">R$ {{ total_exposicao|floatformat:2|intcomma }}</h4>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card bg-dark text-white shadow-sm border-0">
-            <div class="card-body text-center">
-                <h6 class="text-uppercase opacity-75 small">Valor Total Carteira</h6>
-                <h4 class="mb-0">R$ {{ valor_total_carteira|floatformat:2|intcomma }}</h4>
-            </div>
-        </div>
+
+    <div class="kpi-card accent4">
+        <i class="fas fa-layer-group kpi-icon"></i>
+        <div class="kpi-label">Estruturas Ativas</div>
+        <div class="kpi-value val-neu">{{ estruturas_ativas|length }}</div>
+        <div class="kpi-sub">Posições em andamento</div>
     </div>
 </div>
 
-<!-- Gráfico ECharts -->
-<div class="card shadow-sm border-0 mb-5">
-    <div class="card-body">
-        <h5 class="card-title">Evolução do Patrimônio</h5>
-        <div id="chart-patrimonio" style="width: 100%; height: 350px;"></div>
+{# ─── CHART PATRIMÔNIO ─── #}
+{% if valores_chart != '[]' %}
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-chart-area" style="color:var(--dash-accent);"></i>
+            Evolução do Patrimônio
+        </div>
+    </div>
+    <div style="padding: 20px;">
+        <div id="chart-patrimonio" style="width:100%; height:260px;"></div>
+    </div>
+</div>
+{% endif %}
+
+{# ─── ESTRUTURAS ATIVAS ─── #}
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-play-circle" style="color:var(--color-compra);"></i>
+            Estruturas Ativas
+        </div>
+        <span class="badge" style="background:rgba(16,185,129,.12); color:var(--color-compra); border:1px solid rgba(16,185,129,.25); border-radius:20px; font-size:.7rem; padding:3px 10px;">
+            {{ estruturas_ativas|length }} ativa{{ estruturas_ativas|length|pluralize:"s" }}
+        </span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Nome da Estrutura</th>
+                    <th class="text-center">Início</th>
+                    <th class="text-center">Última Op.</th>
+                    <th class="text-center">Dias</th>
+                    <th class="text-end">Exposição</th>
+                    <th class="text-end">P&amp;L Aberto</th>
+                    <th class="text-end">P&amp;L Realizado</th>
+                    <th class="text-end">Valor Total</th>
+                    <th class="text-center">Evolução</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for est in estruturas_ativas %}
+                <tr class="hover-lift-row" onclick="window.location='{% url 'trading:detalhe_estrutura' est.slug %}'" style="cursor:pointer;">
+                    <td>
+                        <a href="{% url 'trading:detalhe_estrutura' est.slug %}" class="est-name-link" onclick="event.stopPropagation();">
+                            <i class="fas fa-layer-group me-2" style="color:var(--dash-muted); font-size:.8rem;"></i>{{ est.nome }}
+                        </a>
+                    </td>
+                    <td class="text-center" style="font-size:.85rem; color:var(--dash-muted);">
+                        {% if est.data_inicial %}{{ est.data_inicial|date:"d/m/y" }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-center" style="font-size:.85rem; color:var(--dash-muted);">
+                        {% if est.data_final %}{{ est.data_final|date:"d/m/y" }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-center" style="font-size:.85rem;">{{ est.dias_estrutura }} d</td>
+                    <td class="text-end fw-bold {% if est.exposicao_atual > 0 %}val-pos{% elif est.exposicao_atual < 0 %}val-neg{% else %}val-neu{% endif %}" style="font-size:.9rem;">
+                        R$ {{ est.exposicao_atual|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-end {% if est.pl_aberto > 0 %}val-pos fw-bold{% elif est.pl_aberto < 0 %}val-neg fw-bold{% else %}val-neu{% endif %}">
+                        R$ {{ est.pl_aberto|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-end {% if est.pl_realizado > 0 %}val-pos fw-bold{% elif est.pl_realizado < 0 %}val-neg{% else %}val-neu{% endif %}">
+                        R$ {{ est.pl_realizado|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-end fw-bold {% if est.valor_total > 0 %}val-pos{% elif est.valor_total < 0 %}val-neg{% else %}val-neu{% endif %}">
+                        R$ {{ est.valor_total|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-center" onclick="event.stopPropagation();">
+                        <div id="spark-{{ est.id }}" style="width:120px; height:42px; margin:auto;"></div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" class="text-center py-5" style="color:var(--dash-muted);">
+                        <i class="fas fa-layer-group" style="font-size:2rem; opacity:.3; display:block; margin-bottom:10px;"></i>
+                        Nenhuma estrutura ativa.<br>
+                        <a href="{% url 'trading:criar_estrutura' %}" style="color:var(--dash-accent); font-size:.85rem;">+ Criar estrutura</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
-<!-- Lista de Estruturas -->
-<h4 class="mb-3 text-success"><i class="fas fa-play-circle me-2"></i> Estruturas Ativas</h4>
-<div class="card shadow-sm border-0 mb-5">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0 align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>Nome da Estrutura</th>
-                        <th class="text-center">Início</th>
-                        <th class="text-center">Última Op.</th>
-                        <th class="text-center">Dias</th>
-                        <th class="text-end">Exposição</th>
-                        <th class="text-end">PL Aberto</th>
-                        <th class="text-end">PL Realizado</th>
-                        <th class="text-end">Valor Total</th>
-                        <th class="text-center">Ação</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for est in estruturas_ativas %}
-                    <tr class="hover-lift-row">
-                        <td class="fw-bold text-primary">
-                            <i class="fas fa-layer-group me-2 text-muted"></i>{{ est.nome }}
-                        </td>
-                        <td class="text-center text-muted" style="font-size: 0.85rem;">
-                            {% if est.data_inicial %}{{ est.data_inicial|date:"d/m/y" }}{% else %}-{% endif %}
-                        </td>
-                        <td class="text-center text-muted" style="font-size: 0.85rem;">
-                            {% if est.data_final %}{{ est.data_final|date:"d/m/y" }}{% else %}-{% endif %}
-                        </td>
-                        <td class="text-center" style="font-size: 0.85rem;">{{ est.dias_estrutura }} d</td>
-                        <td class="text-end fw-bold {% if est.exposicao_atual > 0 %}text-success{% elif est.exposicao_atual < 0 %}text-danger{% else %}text-muted{% endif %}" style="font-size: 0.9rem;">
-                            R$ {{ est.exposicao_atual|floatformat:2|intcomma }}
-                        </td>
-                        <td
-                            class="text-end {% if est.pl_aberto > 0 %}text-success fw-bold{% elif est.pl_aberto < 0 %}text-danger fw-bold{% endif %}">
-                            R$ {{ est.pl_aberto|floatformat:2|intcomma }}
-                        </td>
-                        <td
-                            class="text-end {% if est.pl_realizado > 0 %}text-success fw-bold{% elif est.pl_realizado < 0 %}text-danger{% endif %}">
-                            R$ {{ est.pl_realizado|floatformat:2|intcomma }}
-                        </td>
-                        <td class="text-end fw-bold {% if est.valor_total > 0 %}text-success{% elif est.valor_total < 0 %}text-danger{% endif %}">
-                            R$ {{ est.valor_total|floatformat:2|intcomma }}
-                        </td>
-                        <td class="text-center">
-                            <a href="{% url 'trading:detalhe_estrutura' est.slug %}"
-                                class="btn btn-sm btn-outline-primary">Detalhes</a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="9" class="text-center py-4 text-muted">Nenhuma estrutura ativa.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+{# ─── ESTRUTURAS FINALIZADAS ─── #}
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-check-circle" style="color:var(--dash-muted);"></i>
+            Estruturas Finalizadas
         </div>
+        <span class="badge" style="background:rgba(136,146,164,.1); color:var(--dash-muted); border:1px solid rgba(136,146,164,.2); border-radius:20px; font-size:.7rem; padding:3px 10px;">
+            {{ estruturas_fechadas|length }} finalizada{{ estruturas_fechadas|length|pluralize:"s" }}
+        </span>
     </div>
-</div>
-
-<h4 class="mb-3 text-muted"><i class="fas fa-check-circle me-2"></i> Estruturas Finalizadas</h4>
-<div class="card shadow-sm border-0 mb-4">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0 align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>Nome da Estrutura</th>
-                        <th class="text-center">Início</th>
-                        <th class="text-center">Fim</th>
-                        <th class="text-center">Duração</th>
-                        <th class="text-end">VALOR FINAL</th>
-                        <th class="text-center">Ação</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for est in estruturas_fechadas %}
-                    <tr class="text-muted">
-                        <td class="fw-bold">
-                            <i class="fas fa-archive me-2"></i>{{ est.nome }}
-                        </td>
-                        <td class="text-center" style="font-size: 0.85rem;">{{ est.data_inicial|date:"d/m/y" }}</td>
-                        <td class="text-center" style="font-size: 0.85rem;">{{ est.data_final|date:"d/m/y" }}</td>
-                        <td class="text-center" style="font-size: 0.85rem;">{{ est.dias_estrutura }} dias</td>
-                        <td
-                            class="text-end fw-bold {% if est.valor_total > 0 %}text-success{% elif est.valor_total < 0 %}text-danger{% endif %}">
-                            R$ {{ est.valor_total|floatformat:2|intcomma }}
-                        </td>
-                        <td class="text-center">
-                            <a href="{% url 'trading:detalhe_estrutura' est.slug %}"
-                                class="btn btn-sm btn-outline-secondary">Ver Histórico</a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="6" class="text-center py-4 text-muted">Nenhuma estrutura finalizada.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Nome da Estrutura</th>
+                    <th class="text-center">Início</th>
+                    <th class="text-center">Fim</th>
+                    <th class="text-center">Duração</th>
+                    <th class="text-end">Valor Final</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for est in estruturas_fechadas %}
+                <tr class="hover-lift-row" onclick="window.location='{% url 'trading:detalhe_estrutura' est.slug %}'" style="cursor:pointer; opacity:.8;">
+                    <td>
+                        <a href="{% url 'trading:detalhe_estrutura' est.slug %}" class="est-name-link" onclick="event.stopPropagation();" style="color:var(--dash-muted);">
+                            <i class="fas fa-archive me-2" style="font-size:.8rem;"></i>{{ est.nome }}
+                        </a>
+                    </td>
+                    <td class="text-center" style="font-size:.85rem; color:var(--dash-muted);">{{ est.data_inicial|date:"d/m/y" }}</td>
+                    <td class="text-center" style="font-size:.85rem; color:var(--dash-muted);">{{ est.data_final|date:"d/m/y" }}</td>
+                    <td class="text-center" style="font-size:.85rem; color:var(--dash-muted);">{{ est.dias_estrutura }} dias</td>
+                    <td class="text-end fw-bold {% if est.valor_total > 0 %}val-pos{% elif est.valor_total < 0 %}val-neg{% else %}val-neu{% endif %}">
+                        R$ {{ est.valor_total|floatformat:2|intcomma }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center py-4" style="color:var(--dash-muted);">
+                        Nenhuma estrutura finalizada.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
 {% endblock %}
 
 {% block extra_js %}
-<!-- ECharts -->
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         var chartDom = document.getElementById('chart-patrimonio');
+        if (!chartDom) return;
         var myChart = echarts.init(chartDom);
-        var option;
 
         const rawDatas = '{{ datas_chart|escapejs }}';
         const rawValores = '{{ valores_chart|escapejs }}';
 
-        let datas = [];
-        let valores = [];
-
+        let datas = [], valores = [];
         try {
             datas = JSON.parse(rawDatas);
             valores = JSON.parse(rawValores);
-        } catch (e) {
-            console.error("Erro ao fazer parse dos dados do gráfico", e);
-        }
+        } catch (e) {}
 
-        if (datas.length === 0) {
-            chartDom.innerHTML = '<div class="d-flex h-100 justify-content-center align-items-center text-muted">Sem dados suficientes para o gráfico</div>';
+        if (!datas.length) {
+            chartDom.innerHTML = '<div class="d-flex h-100 justify-content-center align-items-center" style="color:var(--dash-muted);">Sem dados suficientes para o gráfico</div>';
             return;
         }
 
-        option = {
+        const colPos = getComputedStyle(document.documentElement).getPropertyValue('--color-compra').trim() || '#10b981';
+        const colNeg = getComputedStyle(document.documentElement).getPropertyValue('--color-venda').trim() || '#ef4444';
+        const colMuted = getComputedStyle(document.documentElement).getPropertyValue('--dash-muted').trim() || '#8892a4';
+        const lastVal = valores[valores.length - 1];
+        const color = lastVal >= 0 ? colPos : colNeg;
+
+        myChart.setOption({
+            backgroundColor: 'transparent',
             tooltip: {
                 trigger: 'axis',
+                backgroundColor: '#1a1d27',
+                borderColor: 'rgba(255,255,255,.1)',
+                textStyle: { color: '#e2e8f0' },
                 formatter: function (params) {
                     let val = params[0].value;
                     let numStr = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-                    return `${params[0].axisValue}<br/>${params[0].marker} Valor: <b>${numStr}</b>`;
+                    return `${params[0].axisValue}<br/>${params[0].marker} Patrimônio: <b>${numStr}</b>`;
                 }
             },
-            grid: {
-                left: '3%',
-                right: '4%',
-                bottom: '3%',
-                containLabel: true
-            },
+            grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
             xAxis: {
-                type: 'category',
-                boundaryGap: false,
-                data: datas
+                type: 'category', boundaryGap: false, data: datas,
+                axisLabel: { color: colMuted, fontSize: 10 },
+                axisLine: { lineStyle: { color: 'rgba(255,255,255,.08)' } }
             },
             yAxis: {
                 type: 'value',
-                axisLabel: {
-                    formatter: function (value) {
-                        return 'R$ ' + value;
-                    }
-                }
+                axisLabel: { color: colMuted, fontSize: 9, formatter: v => 'R$ ' + v.toLocaleString('pt-BR') },
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,.05)' } }
             },
-            series: [
-                {
-                    name: 'Patrimônio',
-                    type: 'line',
-                    smooth: true,
-                    lineStyle: {
-                        color: '#0d6efd',
-                        width: 3
-                    },
-                    itemStyle: {
-                        color: '#0d6efd'
-                    },
-                    areaStyle: {
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(13, 110, 253, 0.5)' },
-                            { offset: 1, color: 'rgba(13, 110, 253, 0.1)' }
-                        ])
-                    },
-                    data: valores
-                }
-            ]
-        };
-
-        option && myChart.setOption(option);
-
-        // Responsividade
-        window.addEventListener('resize', function () {
-            myChart.resize();
+            series: [{
+                name: 'Patrimônio', type: 'line', smooth: true,
+                lineStyle: { color: color, width: 3 },
+                itemStyle: { color: color },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: color.replace(')', ', 0.4)').replace('rgb', 'rgba') || 'rgba(108,99,255,0.4)' },
+                        { offset: 1, color: 'rgba(108,99,255,0.0)' }
+                    ])
+                },
+                data: valores
+            }]
         });
+        window.addEventListener('resize', () => myChart.resize());
     });
-</script>
-<style>
-    .hover-lift {
-        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-    }
 
-    .hover-lift:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15) !important;
+    // ─── SPARKLINES ───
+    const sparkData = JSON.parse('{{ sparklines_json|escapejs }}');
+    const colPos = getComputedStyle(document.documentElement).getPropertyValue('--color-compra').trim() || '#10b981';
+    const colNeg = getComputedStyle(document.documentElement).getPropertyValue('--color-venda').trim() || '#ef4444';
+
+    for (const [estId, data] of Object.entries(sparkData)) {
+        const el = document.getElementById('spark-' + estId);
+        if (!el || !data.valores || !data.valores.length) continue;
+        const sparkChart = echarts.init(el);
+        const vals = data.valores;
+        const lastVal = vals[vals.length - 1];
+        const color = lastVal >= 0 ? colPos : colNeg;
+        sparkChart.setOption({
+            backgroundColor: 'transparent',
+            grid: { top: 2, bottom: 2, left: 2, right: 2 },
+            xAxis: { type: 'category', show: false, boundaryGap: false, data: vals.map((_, i) => i) },
+            yAxis: { type: 'value', show: false, scale: true },
+            series: [{
+                type: 'line', data: vals, smooth: true, symbol: 'none',
+                lineStyle: { color: color, width: 1.5 },
+                areaStyle: { color: color + '33' }
+            }]
+        });
+        window.addEventListener('resize', () => sparkChart.resize());
     }
-</style>
+</script>
 {% endblock %}

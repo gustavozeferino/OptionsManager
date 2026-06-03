@@ -111,6 +111,7 @@ class Rolagem(models.Model):
     ]
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ATIVA')
     filtro_liquidez = models.IntegerField(default=0, help_text="Mínimo de contratos negociados por leg")
+    estrutura = models.ForeignKey(Estrutura, on_delete=models.SET_NULL, null=True, blank=True, related_name='spreads')
     
     # Cache de estatísticas rápidas
     spread_medio_5d = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)

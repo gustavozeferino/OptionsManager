@@ -60,6 +60,30 @@ a:hover {
     background: var(--dash-muted);
 }
 
+/* ─── BOOTSTRAP UTILITY OVERRIDES (Dark Theme) ─── */
+
+/* Force dark backgrounds on any white/light Bootstrap utility */
+.bg-white { background-color: var(--dash-card) !important; color: var(--dash-text) !important; }
+.bg-light  { background-color: var(--dash-card-hover) !important; color: var(--dash-text) !important; }
+.text-dark { color: var(--dash-text) !important; }
+.text-body { color: var(--dash-text) !important; }
+.text-black { color: var(--dash-text) !important; }
+
+/* Override coloured card backgrounds from Bootstrap */
+.card.bg-primary { background-color: rgba(108, 99, 255, 0.15) !important; border-color: rgba(108, 99, 255, 0.3) !important; color: var(--dash-text) !important; }
+.card.bg-success { background-color: rgba(16, 185, 129, 0.12) !important; border-color: rgba(16, 185, 129, 0.3) !important; color: var(--dash-text) !important; }
+.card.bg-info    { background-color: rgba(14, 165, 233, 0.12) !important; border-color: rgba(14, 165, 233, 0.3) !important; color: var(--dash-text) !important; }
+.card.bg-danger  { background-color: rgba(239, 68, 68, 0.12) !important; border-color: rgba(239, 68, 68, 0.3) !important; color: var(--dash-text) !important; }
+.card.bg-warning { background-color: rgba(245, 158, 11, 0.12) !important; border-color: rgba(245, 158, 11, 0.3) !important; color: var(--dash-text) !important; }
+.card.bg-dark    { background-color: rgba(255, 255, 255, 0.04) !important; border-color: var(--dash-border) !important; color: var(--dash-text) !important; }
+
+/* Card border accent overrides */
+.border-primary { border-color: var(--dash-accent) !important; }
+.border-success { border-color: var(--color-compra) !important; }
+.border-danger  { border-color: var(--color-venda) !important; }
+.border-info    { border-color: var(--color-call) !important; }
+.border-warning { border-color: var(--color-put) !important; }
+
 /* ─── BOOTSTRAP COMPONENTS OVERRIDES ─── */
 
 /* Cards with Cyber Glassmorphism */

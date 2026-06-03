@@ -30,7 +30,7 @@
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body text-center">
                 <h6 class="text-uppercase text-muted small">Spread Médio (5d)</h6>
-                <h3 class="mb-0 text-primary">R$ {{ rolagem.spread_medio_5d|default:"0.00"|floatformat:2|intcomma }}</h3>
+                <h3 class="mb-0 {% if rolagem.spread_medio_5d is not None %}{% if rolagem.spread_medio_5d > 0 %}color-compra{% elif rolagem.spread_medio_5d < 0 %}color-venda{% endif %}{% endif %}">R$ {{ rolagem.spread_medio_5d|default:"0.00"|floatformat:2|intcomma }}</h3>
             </div>
         </div>
     </div>
@@ -38,7 +38,7 @@
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body text-center">
                 <h6 class="text-uppercase text-muted small">Spread Atual</h6>
-                <h3 class="mb-0 {% if rolagem.spread_atual > 0 %}text-success{% elif rolagem.spread_atual < 0 %}text-danger{% endif %}">
+                <h3 class="mb-0 {% if rolagem.spread_atual %}{% if rolagem.spread_atual > 0 %}color-compra{% elif rolagem.spread_atual < 0 %}color-venda{% endif %}{% endif %}">
                     R$ {{ rolagem.spread_atual|default:"0.00"|floatformat:2|intcomma }}
                 </h3>
             </div>
@@ -53,9 +53,12 @@
     </div>
 </div>
 
-<div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-white py-3">
-        <h5 class="mb-0">Histórico Diário de Spreads</h5>
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-table" style="color:var(--dash-muted);"></i>
+            Histórico Diário de Spreads
+        </div>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -123,8 +126,12 @@
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         var chartDom = document.getElementById('chart-spread');
-        var myChart = echarts.init(chartDom);
+        var myChart = echarts.init(chartDom, 'dark');
         var option;
+
+        const colPos = getComputedStyle(document.documentElement).getPropertyValue('--dash-accent').trim() || '#6c63ff';
+        const colAlt = getComputedStyle(document.documentElement).getPropertyValue('--dash-accent2').trim() || '#00d4aa';
+        const colMuted = getComputedStyle(document.documentElement).getPropertyValue('--dash-muted').trim() || '#8892a4';
 
         const rawDatas = '{{ datas_chart|escapejs }}';
         const rawValores = '{{ valores_chart|escapejs }}';
@@ -148,8 +155,12 @@
         }
 
         option = {
+            backgroundColor: 'transparent',
             tooltip: {
                 trigger: 'axis',
+                backgroundColor: '#1a1d27',
+                borderColor: 'rgba(255,255,255,.1)',
+                textStyle: { color: '#e2e8f0' },
                 formatter: function (params) {
                     let text = params[0].axisValue + '<br/>';
                     params.forEach(function(param) {
@@ -175,32 +186,32 @@
             xAxis: {
                 type: 'category',
                 boundaryGap: false,
-                data: datas
+                data: datas,
+                axisLabel: { color: colMuted, fontSize: 10 },
+                axisLine: { lineStyle: { color: 'rgba(255,255,255,.08)' } }
             },
             yAxis: {
                 type: 'value',
+                scale: true,
                 axisLabel: {
+                    color: colMuted, fontSize: 9,
                     formatter: function (value) {
                         return 'R$ ' + value;
                     }
-                }
+                },
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,.05)' } }
             },
             series: [
                 {
                     name: 'Spread (VWAP)',
                     type: 'line',
                     smooth: true,
-                    lineStyle: {
-                        color: '#6f42c1',
-                        width: 3
-                    },
-                    itemStyle: {
-                        color: '#6f42c1'
-                    },
+                    lineStyle: { color: colPos, width: 3 },
+                    itemStyle: { color: colPos },
                     areaStyle: {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(111, 66, 193, 0.5)' },
-                            { offset: 1, color: 'rgba(111, 66, 193, 0.1)' }
+                            { offset: 0, color: 'rgba(108,99,255,0.35)' },
+                            { offset: 1, color: 'rgba(108,99,255,0.0)' }
                         ])
                     },
                     data: valores
@@ -209,14 +220,8 @@
                     name: 'Spread (Fechamento)',
                     type: 'line',
                     smooth: true,
-                    lineStyle: {
-                        color: '#28a745',
-                        width: 3,
-                        type: 'dashed'
-                    },
-                    itemStyle: {
-                        color: '#28a745'
-                    },
+                    lineStyle: { color: colAlt, width: 2, type: 'dashed' },
+                    itemStyle: { color: colAlt },
                     data: valoresFechamento
                 }
             ]

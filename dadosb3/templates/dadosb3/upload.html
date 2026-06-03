@@ -61,35 +61,11 @@
             <form id="uploadForm" enctype="multipart/form-data">
                 {% csrf_token %}
                 
-                <h5 class="fw-bold mb-3">1. Selecione o tipo de arquivo</h5>
-                <div class="row g-3 mb-4">
-                    <div class="col-md-6 col-lg-3 radio-card">
-                        <input type="radio" name="file_type" id="type_cadastro" value="cadastro" checked>
-                        <label class="card h-100 text-center p-3 shadow-sm rounded-3 w-100" for="type_cadastro">
-                            <i class="fas fa-clipboard-list fs-1 text-primary mb-2"></i>
-                            <span class="fw-semibold small">Cadastro de Instrumentos</span>
-                        </label>
-                    </div>
-                    <div class="col-md-6 col-lg-3 radio-card">
-                        <input type="radio" name="file_type" id="type_negocios" value="negocios">
-                        <label class="card h-100 text-center p-3 shadow-sm rounded-3 w-100" for="type_negocios">
-                            <i class="fas fa-handshake fs-1 text-success mb-2"></i>
-                            <span class="fw-semibold small">Negócios Consolidados</span>
-                        </label>
-                    </div>
-                    <div class="col-md-6 col-lg-3 radio-card">
-                        <input type="radio" name="file_type" id="type_posicoes" value="posicoes">
-                        <label class="card h-100 text-center p-3 shadow-sm rounded-3 w-100" for="type_posicoes">
-                            <i class="fas fa-chart-pie fs-1 text-purple mb-2" style="color: #6f42c1;"></i>
-                            <span class="fw-semibold small">Posições em Aberto</span>
-                        </label>
-                    </div>
-                    <div class="col-md-6 col-lg-3 radio-card">
-                        <input type="radio" name="file_type" id="type_cothist" value="cotacao_historica">
-                        <label class="card h-100 text-center p-3 shadow-sm rounded-3 w-100" for="type_cothist">
-                            <i class="fas fa-history fs-1 text-warning mb-2"></i>
-                            <span class="fw-semibold small">Cotação Histórica B3</span>
-                        </label>
+                <div class="alert alert-secondary d-flex align-items-center mb-4 border-0 shadow-sm rounded-3">
+                    <i class="fas {{ icon }} fs-1 {{ color }} me-3"></i>
+                    <div>
+                        <h5 class="fw-bold mb-0 text-dark">{{ title }}</h5>
+                        <small class="text-muted">Faça o upload do arquivo referente a esta seção.</small>
                     </div>
                 </div>
 
@@ -120,6 +96,41 @@
                     <i id="btnSubmitSpinner" class="fas fa-circle-notch fa-spin ms-2 d-none"></i>
                 </button>
             </form>
+            
+            <!-- Histórico de Uploads -->
+            <div class="mt-5">
+                <h5 class="fw-bold mb-3"><i class="fas fa-history me-2 text-secondary"></i>Últimos Uploads</h5>
+                {% if recent_logs %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead class="table-light text-muted small">
+                            <tr>
+                                <th>Arquivo</th>
+                                <th>Data/Hora</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in recent_logs %}
+                            <tr>
+                                <td><span class="fw-medium">{{ log.nome_arquivo }}</span></td>
+                                <td class="text-muted small">{{ log.data_hora|date:"d/m/Y H:i" }}</td>
+                                <td>
+                                    {% if log.status == 'Sucesso' %}
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25"><i class="fas fa-check me-1"></i>Sucesso</span>
+                                    {% else %}
+                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25" title="{{ log.descricao_falha }}"><i class="fas fa-times me-1"></i>Erro</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small">Nenhum upload recente registrado.</p>
+                {% endif %}
+            </div>
         </div>
     </div>
 
@@ -406,8 +417,27 @@ document.addEventListener('DOMContentLoaded', function() {
         btnSubmit.disabled = true;
     });
     
-    form.addEventListener('submit', function(e) {
+    form.addEventListener('submit', async function(e) {
         e.preventDefault();
+        
+        // Verifica a similaridade do nome do arquivo
+        if (fileInput.files.length > 0) {
+            const currentFileName = fileInput.files[0].name;
+            try {
+                const response = await fetch(`/dadosb3/api/check-filename/?filename=${encodeURIComponent(currentFileName)}`);
+                const data = await response.json();
+                
+                if (data.warning) {
+                    const proceed = confirm(data.message);
+                    if (!proceed) {
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error('Erro ao verificar similaridade de arquivo', err);
+            }
+        }
+        
         const formData = new FormData(this);
         
         btnSubmit.disabled = true;
@@ -422,7 +452,7 @@ document.addEventListener('DOMContentLoaded', function() {
         progressBar.classList.add('bg-primary');
         progressPercentage.textContent = '0%';
         
-        fetch('{% url "dadosb3:upload" %}', {
+        fetch('', { // O form submete para a URL atual (da aba)
             method: 'POST',
             body: formData,
             headers: {
@@ -456,6 +486,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     const progress = data.progress;
                     progressBar.style.width = `${progress}%`;
                     progressPercentage.textContent = `${progress}%`;
+                    
+                    if (data.stage) {
+                        statusLabel.textContent = data.stage;
+                    }
                     
                     if (data.stats) {
                         if (data.stats.unit) {

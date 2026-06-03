@@ -108,13 +108,18 @@
                         </a>
                     </li>
                     <li>
-                        <a href="{% url 'trading:relatorio_performance' %}" class="nav-item {% if request.resolver_match.url_name == 'relatorio_performance' %}active{% endif %}">
-                            <i class="fas fa-chart-line"></i><span>Relatórios</span>
+                        <a href="{% url 'trading:posicoes' %}" class="nav-item {% if request.resolver_match.url_name == 'posicoes' %}active{% endif %}">
+                            <i class="fas fa-briefcase"></i><span>Posições</span>
                         </a>
                     </li>
                     <li>
                         <a href="{% url 'trading:lista_rolagens' %}" class="nav-item {% if 'rolagem' in request.resolver_match.url_name or 'lista_rolagens' in request.resolver_match.url_name %}active{% endif %}">
                             <i class="fas fa-exchange-alt"></i><span>Spreads</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'trading:relatorio_performance' %}" class="nav-item {% if request.resolver_match.url_name == 'relatorio_performance' %}active{% endif %}">
+                            <i class="fas fa-chart-line"></i><span>Relatórios</span>
                         </a>
                     </li>
 
@@ -153,7 +158,7 @@
                         </a>
                     </li>
                     <li>
-                        <a href="{% url 'dadosb3:upload' %}" class="nav-item {% if request.resolver_match.url_name == 'upload' and request.resolver_match.app_name == 'dadosb3' %}active{% endif %}">
+                        <a href="{% url 'dadosb3:upload_cadastro' %}" class="nav-item {% if 'upload_' in request.resolver_match.url_name and request.resolver_match.app_name == 'dadosb3' %}active{% endif %}">
                             <i class="fas fa-upload"></i><span>B3 Upload</span>
                         </a>
                     </li>
@@ -194,6 +199,40 @@
 
         <!-- Main Content Area -->
         <div class="app-main">
+            <!-- Submenu Upload (Only on upload pages) -->
+            {% if 'upload_' in request.resolver_match.url_name and request.resolver_match.app_name == 'dadosb3' %}
+            <div class="sub-nav-wrapper">
+                <div class="container-fluid">
+                    <ul class="nav nav-pills py-1 small">
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'upload_cadastro' %}active{% endif %}" 
+                               href="{% url 'dadosb3:upload_cadastro' %}">
+                                <i class="fas fa-clipboard-list me-1"></i>Cadastro
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'upload_negocios' %}active{% endif %}" 
+                               href="{% url 'dadosb3:upload_negocios' %}">
+                                <i class="fas fa-handshake me-1"></i>Negócios
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'upload_posicoes' %}active{% endif %}" 
+                               href="{% url 'dadosb3:upload_posicoes' %}">
+                                <i class="fas fa-chart-pie me-1"></i>Posições
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'upload_cothist' %}active{% endif %}" 
+                               href="{% url 'dadosb3:upload_cothist' %}">
+                                <i class="fas fa-history me-1"></i>Cotação Histórica
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Submenu Open Interest (Only on OI pages) -->
             {% if request.resolver_match.url_name == 'consultar_open_interest' or request.resolver_match.url_name == 'grafico_open_interest' or request.resolver_match.url_name == 'barreiras_open_interest' or request.resolver_match.url_name == 'fluxo_open_interest' %}
             <div class="sub-nav-wrapper">

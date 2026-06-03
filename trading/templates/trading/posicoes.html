@@ -1,0 +1,492 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Posições — OptionsManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ─── KPI STRIP ─── */
+    .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+    .kpi-card {
+        background: var(--dash-card);
+        border: 1px solid var(--dash-border);
+        border-radius: 16px;
+        padding: 20px 22px;
+        position: relative;
+        overflow: hidden;
+        transition: transform .18s, box-shadow .18s;
+    }
+    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 36px rgba(0,0,0,.4); }
+    .kpi-card::before {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        border-radius: 16px 16px 0 0;
+    }
+    .kpi-card.accent1::before { background: linear-gradient(90deg, #6c63ff, #9c8cf8); }
+    .kpi-card.accent2::before { background: linear-gradient(90deg, #10b981, #34d399); }
+    .kpi-card.accent3::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .kpi-card.accent4::before { background: linear-gradient(90deg, #0ea5e9, #38bdf8); }
+    .kpi-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; color: var(--dash-muted); margin-bottom: 6px; }
+    .kpi-value { font-size: 1.55rem; font-weight: 700; line-height: 1.1; }
+    .kpi-icon  { position: absolute; right: 18px; top: 18px; font-size: 1.5rem; opacity: .18; }
+    .val-pos { color: var(--color-compra) !important; }
+    .val-neg { color: var(--color-venda) !important; }
+    .val-neu { color: var(--dash-text); }
+
+    /* ─── FILTER BAR ─── */
+    .filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        padding: 14px 18px;
+        background: var(--dash-card);
+        border: 1px solid var(--dash-border);
+        border-radius: 12px;
+        margin-bottom: 18px;
+    }
+    .filter-bar input, .filter-bar select {
+        background: var(--dash-bg);
+        border: 1px solid var(--dash-border);
+        border-radius: 8px;
+        color: var(--dash-text);
+        padding: 6px 12px;
+        font-size: .85rem;
+        outline: none;
+    }
+    .filter-bar input:focus, .filter-bar select:focus {
+        border-color: var(--dash-accent);
+        box-shadow: 0 0 0 2px rgba(108,99,255,.2);
+    }
+    .filter-bar label { font-size: .8rem; color: var(--dash-muted); margin-bottom: 0; }
+
+    /* ─── TABLE ─── */
+    th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    th.sortable:hover { color: var(--dash-accent); }
+    th.sortable .sort-icon { margin-left: 4px; opacity: .4; font-size: .75em; }
+    th.sortable.asc .sort-icon::before  { content: '▲'; opacity: 1; }
+    th.sortable.desc .sort-icon::before { content: '▼'; opacity: 1; }
+    th.sortable:not(.asc):not(.desc) .sort-icon::before { content: '⇅'; }
+
+    @media (max-width: 900px) {
+        .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 500px) {
+        .kpi-strip { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ─── HEADER ─── #}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-0 fw-bold" style="color:var(--dash-text);">
+            <i class="fas fa-briefcase me-2" style="color:var(--dash-accent);"></i>Posições
+        </h4>
+        <span style="font-size:.78rem; color:var(--dash-muted);">Visão consolidada de todas as posições em opções</span>
+    </div>
+</div>
+
+{# ─── KPI STRIP ─── #}
+{% with total_aberto=0 total_realizado=0 %}
+<div class="kpi-strip">
+    <div class="kpi-card accent1">
+        <i class="fas fa-folder-open kpi-icon"></i>
+        <div class="kpi-label">Posições Abertas</div>
+        <div class="kpi-value val-neu" id="kpi-abertas">{{ posicoes_abertas|length }}</div>
+    </div>
+    <div class="kpi-card accent2">
+        <i class="fas fa-wallet kpi-icon"></i>
+        <div class="kpi-label">P&amp;L Aberto Total</div>
+        <div class="kpi-value" id="kpi-pl-aberto">
+            {% with soma=0 %}
+            R$ <span id="kpi-pl-aberto-val">...</span>
+            {% endwith %}
+        </div>
+    </div>
+    <div class="kpi-card accent3">
+        <i class="fas fa-coins kpi-icon"></i>
+        <div class="kpi-label">P&amp;L Realizado Total</div>
+        <div class="kpi-value">
+            R$ <span id="kpi-pl-realizado-val">...</span>
+        </div>
+    </div>
+    <div class="kpi-card accent4">
+        <i class="fas fa-archive kpi-icon"></i>
+        <div class="kpi-label">Posições Encerradas</div>
+        <div class="kpi-value val-neu">{{ page_encerradas.paginator.count }}</div>
+    </div>
+</div>
+{% endwith %}
+
+{# ─── POSIÇÕES ABERTAS ─── #}
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-folder-open" style="color:var(--color-compra);"></i>
+            Posições Abertas
+            <span class="badge ms-2" style="background:rgba(16,185,129,.12); color:var(--color-compra); border:1px solid rgba(16,185,129,.25); border-radius:20px; font-size:.7rem; padding:3px 10px;">
+                {{ posicoes_abertas|length }}
+            </span>
+        </div>
+    </div>
+
+    {# Filtros #}
+    <div class="filter-bar mx-3 mt-3">
+        <div>
+            <label>Buscar</label>
+            <input type="text" id="filtro-ticker" placeholder="Ticker ou ativo..." style="width:160px;">
+        </div>
+        <div>
+            <label>Tipo</label>
+            <select id="filtro-tipo">
+                <option value="">Todos</option>
+                <option value="CALL">CALL</option>
+                <option value="PUT">PUT</option>
+                <option value="ATIVO">ATIVO</option>
+            </select>
+        </div>
+        <div>
+            <label>Estrutura</label>
+            <select id="filtro-estrutura">
+                <option value="">Todas</option>
+                {% for pos in posicoes_abertas %}
+                    <option value="{{ pos.estrutura.nome }}">{{ pos.estrutura.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Lado</label>
+            <select id="filtro-lado">
+                <option value="">Todos</option>
+                <option value="comprado">Comprado</option>
+                <option value="vendido">Vendido</option>
+            </select>
+        </div>
+        <div>
+            <label>Vencimento</label>
+            <select id="filtro-vencimento">
+                <option value="">Todos</option>
+            </select>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" onclick="limparFiltros()">
+            <i class="fas fa-times me-1"></i> Limpar
+        </button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle" id="tabela-abertas">
+            <thead>
+                <tr>
+                    <th class="sortable" data-col="0">Estrutura <span class="sort-icon"></span></th>
+                    <th class="sortable" data-col="1">Ativo <span class="sort-icon"></span></th>
+                    <th class="sortable" data-col="2">Tipo <span class="sort-icon"></span></th>
+                    <th class="text-end sortable" data-col="3">Strike <span class="sort-icon"></span></th>
+                    <th class="text-center sortable" data-col="4">Vencimento <span class="sort-icon"></span></th>
+                    <th class="text-end sortable" data-col="5">Qtd <span class="sort-icon"></span></th>
+                    <th class="text-end sortable" data-col="6">Preço Médio <span class="sort-icon"></span></th>
+                    <th class="text-end sortable" data-col="7">Último Preço <span class="sort-icon"></span></th>
+                    <th class="text-end sortable" data-col="8">P&amp;L Aberto <span class="sort-icon"></span></th>
+                    <th class="text-end sortable" data-col="9">P&amp;L Realizado <span class="sort-icon"></span></th>
+                    <th class="text-end sortable" data-col="10">P&amp;L Total <span class="sort-icon"></span></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="tbody-abertas">
+                {% for pos in posicoes_abertas %}
+                <tr
+                    data-ticker="{{ pos.ativo.ticker }}"
+                    data-tipo="{{ pos.ativo.tipo_display }}"
+                    data-estrutura="{{ pos.estrutura.nome }}"
+                    data-lado="{% if pos.quantidade_atual > 0 %}comprado{% else %}vendido{% endif %}"
+                >
+                    <td style="font-size:.82rem; color:var(--dash-muted);">
+                        <a href="{% url 'trading:detalhe_estrutura' pos.estrutura.slug %}" class="text-decoration-none" style="color:var(--dash-muted);">
+                            <i class="fas fa-layer-group me-1" style="font-size:.75rem;"></i>{{ pos.estrutura.nome }}
+                        </a>
+                    </td>
+                    <td class="fw-bold">{{ pos.ativo.ticker }}</td>
+                    <td>
+                        <span class="{% if pos.ativo.tipo_display == 'CALL' %}badge-call{% elif pos.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %}">
+                            {{ pos.ativo.tipo_display }}
+                        </span>
+                    </td>
+                    <td class="text-end">
+                        {% if pos.ativo.preco_exercicio %}{{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-center text-muted" style="font-size:.85rem;" data-venc="{% if pos.ativo.data_expiracao %}{{ pos.ativo.data_expiracao|date:'d/m/Y' }}{% else %}-{% endif %}" data-sort="{% if pos.ativo.data_expiracao %}{{ pos.ativo.data_expiracao|date:'Y-m-d' }}{% else %}9999-12-31{% endif %}">
+                        {% if pos.ativo.data_expiracao %}{{ pos.ativo.data_expiracao|date:"d/m/y" }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end">
+                        <span class="{% if pos.quantidade_atual > 0 %}badge-compra{% elif pos.quantidade_atual < 0 %}badge-venda{% else %}badge bg-secondary{% endif %}">
+                            {{ pos.quantidade_atual }}
+                        </span>
+                    </td>
+                    <td class="text-end">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
+                    <td class="text-end">R$ {{ pos.ultimo_preco|floatformat:2|intcomma }}</td>
+                    <td class="text-end {% if pos.pl_aberto_calc > 0 %}val-pos{% elif pos.pl_aberto_calc < 0 %}val-neg{% else %}val-neu{% endif %}">
+                        R$ {{ pos.pl_aberto_calc|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-end {% if pos.pl_realizado_acumulado > 0 %}val-pos{% elif pos.pl_realizado_acumulado < 0 %}val-neg{% else %}val-neu{% endif %}">
+                        R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-end fw-bold {% if pos.pl_total > 0 %}val-pos{% elif pos.pl_total < 0 %}val-neg{% else %}val-neu{% endif %}">
+                        R$ {{ pos.pl_total|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-center">
+                        <a href="{% url 'trading:detalhe_estrutura' pos.estrutura.slug %}" class="btn btn-sm btn-outline-secondary" title="Ver estrutura">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="12" class="text-center py-5" style="color:var(--dash-muted);">
+                        <i class="fas fa-briefcase" style="font-size:2rem; opacity:.3; display:block; margin-bottom:10px;"></i>
+                        Nenhuma posição aberta.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{# ─── POSIÇÕES ENCERRADAS ─── #}
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-folder" style="color:var(--dash-muted);"></i>
+            Posições Encerradas
+            <span class="badge ms-2" style="background:rgba(136,146,164,.1); color:var(--dash-muted); border:1px solid rgba(136,146,164,.2); border-radius:20px; font-size:.7rem; padding:3px 10px;">
+                {{ page_encerradas.paginator.count }}
+            </span>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Estrutura</th>
+                    <th>Ativo</th>
+                    <th>Tipo</th>
+                    <th class="text-end">Strike</th>
+                    <th class="text-center">Vencimento</th>
+                    <th class="text-end">Preço Médio</th>
+                    <th class="text-end">P&amp;L Realizado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pos in page_encerradas %}
+                <tr style="opacity:.8;">
+                    <td style="font-size:.82rem; color:var(--dash-muted);">
+                        <a href="{% url 'trading:detalhe_estrutura' pos.estrutura.slug %}" class="text-decoration-none" style="color:var(--dash-muted);">
+                            {{ pos.estrutura.nome }}
+                        </a>
+                    </td>
+                    <td class="fw-bold text-muted">{{ pos.ativo.ticker }}</td>
+                    <td>
+                        <span class="{% if pos.ativo.tipo_display == 'CALL' %}badge-call{% elif pos.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %}" style="opacity:.7;">
+                            {{ pos.ativo.tipo_display }}
+                        </span>
+                    </td>
+                    <td class="text-end text-muted">
+                        {% if pos.ativo.preco_exercicio %}{{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-center text-muted" style="font-size:.85rem;">
+                        {% if pos.ativo.data_expiracao %}{{ pos.ativo.data_expiracao|date:"d/m/y" }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end text-muted">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
+                    <td class="text-end fw-bold {% if pos.pl_realizado_acumulado > 0 %}val-pos{% elif pos.pl_realizado_acumulado < 0 %}val-neg{% else %}val-neu{% endif %}">
+                        R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center py-4 text-muted">Nenhuma posição encerrada.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page_encerradas.has_other_pages %}
+    <div class="p-3">
+        <nav>
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                {% if page_encerradas.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page=1">« Primeira</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_encerradas.previous_page_number }}">Anterior</a></li>
+                {% endif %}
+                <li class="page-item active">
+                    <span class="page-link">Página {{ page_encerradas.number }} de {{ page_encerradas.paginator.num_pages }}</span>
+                </li>
+                {% if page_encerradas.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_encerradas.next_page_number }}">Próxima</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_encerradas.paginator.num_pages }}">Última »</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    // ─── KPI: calcular P&L aberto e realizado a partir das linhas da tabela ───
+    let plAberto = 0, plRealizado = 0;
+    document.querySelectorAll('#tbody-abertas tr[data-ticker]').forEach(row => {
+        const cells = row.querySelectorAll('td');
+        const parseVal = (el) => {
+            if (!el) return 0;
+            const txt = el.textContent.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+            return parseFloat(txt) || 0;
+        };
+        plAberto    += parseVal(cells[8]);
+        plRealizado += parseVal(cells[9]);
+    });
+
+    const fmtBRL = v => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+    const elAb = document.getElementById('kpi-pl-aberto-val');
+    const elRe = document.getElementById('kpi-pl-realizado-val');
+    if (elAb) {
+        elAb.textContent = fmtBRL(plAberto);
+        elAb.closest('.kpi-value').className = 'kpi-value ' + (plAberto > 0 ? 'val-pos' : plAberto < 0 ? 'val-neg' : 'val-neu');
+    }
+    if (elRe) {
+        elRe.textContent = fmtBRL(plRealizado);
+        elRe.closest('.kpi-value').className = 'kpi-value ' + (plRealizado > 0 ? 'val-pos' : plRealizado < 0 ? 'val-neg' : 'val-neu');
+    }
+
+    // ─── FILTROS ───
+    const filtroTicker    = document.getElementById('filtro-ticker');
+    const filtroTipo      = document.getElementById('filtro-tipo');
+    const filtroEstrutura = document.getElementById('filtro-estrutura');
+    const filtroLado      = document.getElementById('filtro-lado');
+    const filtroVencimento= document.getElementById('filtro-vencimento');
+    const rows            = document.querySelectorAll('#tbody-abertas tr[data-ticker]');
+
+    // Preenche o filtro de vencimento dinamicamente
+    const vencimentoSeen = new Set();
+    const vencimentosArray = [];
+    rows.forEach(row => {
+        const td = row.children[4];
+        const vencText = td.getAttribute('data-venc');
+        const sortVal = td.getAttribute('data-sort');
+        if (vencText && vencText !== '-' && !vencimentoSeen.has(vencText)) {
+            vencimentoSeen.add(vencText);
+            vencimentosArray.push({ text: vencText, val: sortVal });
+        }
+    });
+    // Ordena as opções do select cronologicamente
+    vencimentosArray.sort((a, b) => a.val.localeCompare(b.val));
+    vencimentosArray.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.text;
+        opt.textContent = v.text;
+        filtroVencimento.appendChild(opt);
+    });
+
+    // Remove duplicates no select de estrutura
+    const estruturaSelect = document.getElementById('filtro-estrutura');
+    const seen = new Set();
+    Array.from(estruturaSelect.options).forEach(opt => {
+        if (seen.has(opt.value) && opt.value !== '') opt.remove();
+        else seen.add(opt.value);
+    });
+
+    function aplicarFiltros() {
+        const ticker    = filtroTicker.value.toLowerCase().trim();
+        const tipo      = filtroTipo.value.toLowerCase();
+        const estrutura = filtroEstrutura.value.toLowerCase();
+        const lado      = filtroLado.value.toLowerCase();
+        const vencimento = filtroVencimento.value;
+
+        let visivel = 0;
+        rows.forEach(row => {
+            const rTicker    = (row.dataset.ticker || '').toLowerCase();
+            const rTipo      = (row.dataset.tipo || '').toLowerCase();
+            const rEstrutura = (row.dataset.estrutura || '').toLowerCase();
+            const rLado      = (row.dataset.lado || '').toLowerCase();
+            const rVenc      = row.children[4].getAttribute('data-venc');
+
+            const ok = (!ticker    || rTicker.includes(ticker))
+                    && (!tipo      || rTipo === tipo)
+                    && (!estrutura || rEstrutura === estrutura)
+                    && (!lado      || rLado === lado)
+                    && (!vencimento|| rVenc === vencimento);
+
+            row.style.display = ok ? '' : 'none';
+            if (ok) visivel++;
+        });
+
+        document.getElementById('kpi-abertas').textContent = visivel;
+    }
+
+    window.limparFiltros = function () {
+        filtroTicker.value = '';
+        filtroTipo.value = '';
+        filtroEstrutura.value = '';
+        filtroLado.value = '';
+        filtroVencimento.value = '';
+        aplicarFiltros();
+    };
+
+    filtroTicker.addEventListener('input', aplicarFiltros);
+    filtroTipo.addEventListener('change', aplicarFiltros);
+    filtroEstrutura.addEventListener('change', aplicarFiltros);
+    filtroLado.addEventListener('change', aplicarFiltros);
+    filtroVencimento.addEventListener('change', aplicarFiltros);
+
+    // ─── ORDENAÇÃO ───
+    let sortCol = -1, sortAsc = true;
+
+    document.querySelectorAll('#tabela-abertas th.sortable').forEach(th => {
+        th.addEventListener('click', function () {
+            const col = parseInt(this.dataset.col);
+            if (sortCol === col) sortAsc = !sortAsc;
+            else { sortCol = col; sortAsc = true; }
+
+            document.querySelectorAll('#tabela-abertas th.sortable').forEach(h => {
+                h.classList.remove('asc', 'desc');
+            });
+            this.classList.add(sortAsc ? 'asc' : 'desc');
+
+            const tbody = document.getElementById('tbody-abertas');
+            const rowArr = Array.from(tbody.querySelectorAll('tr[data-ticker]'));
+
+            rowArr.sort((a, b) => {
+                const cellA = a.querySelectorAll('td')[col];
+                const cellB = b.querySelectorAll('td')[col];
+                if (!cellA || !cellB) return 0;
+
+                const textA = cellA.textContent.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+                const textB = cellB.textContent.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+
+                const numA = parseFloat(textA);
+                const numB = parseFloat(textB);
+
+                let cmp;
+                if (cellA.hasAttribute('data-sort') && cellB.hasAttribute('data-sort')) {
+                    const sortA = cellA.getAttribute('data-sort');
+                    const sortB = cellB.getAttribute('data-sort');
+                    cmp = sortA.localeCompare(sortB);
+                } else if (!isNaN(numA) && !isNaN(numB)) {
+                    cmp = numA - numB;
+                } else {
+                    cmp = textA.localeCompare(textB, 'pt-BR');
+                }
+                return sortAsc ? cmp : -cmp;
+            });
+
+            rowArr.forEach(r => tbody.appendChild(r));
+        });
+    });
+});
+</script>
+{% endblock %}

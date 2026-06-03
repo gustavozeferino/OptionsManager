@@ -66,6 +66,31 @@ def adicionar_ordem(request, slug):
     
     return render(request, 'trading/adicionar_ordem.html', {'form': form, 'estrutura': estrutura})
 
+@login_required
+def editar_ordem(request, ordem_id):
+    """Edita uma ordem existente."""
+    ordem = get_object_or_404(Ordem, id=ordem_id, estrutura__usuario=request.user)
+    estrutura = ordem.estrutura
+    from .forms import OrdemForm
+    
+    if request.method == 'POST':
+        form = OrdemForm(request.POST, instance=ordem)
+        if form.is_valid():
+            form.save()
+            
+            # Recalcula a estrutura
+            from .services import recalcular_estrutura
+            recalcular_estrutura(estrutura)
+            
+            messages.success(request, f"Ordem atualizada com sucesso!")
+            return redirect('trading:detalhe_estrutura', slug=estrutura.slug)
+    else:
+        form = OrdemForm(instance=ordem)
+        # Pre-fill ticker
+        form.fields['ativo_input'].initial = ordem.ativo.ticker
+    
+    return render(request, 'trading/adicionar_ordem.html', {'form': form, 'estrutura': estrutura, 'edit_mode': True})
+
 from django.http import JsonResponse
 from core.models import AtivoB3
 
@@ -165,6 +190,11 @@ def dashboard_estruturas(request):
         'total_exposicao': total_exposicao,
         'datas_chart': json.dumps(datas_chart),
         'valores_chart': json.dumps(valores_chart),
+        'sparklines_json': json.dumps({
+            str(est.id): {
+                'valores': [float(s.valor_total) for s in reversed(list(est.historico_snapshots.order_by('-data')[:30]))]
+            } for est in estruturas_ativas
+        }),
     }
     
     return render(request, 'trading/dashboard_estruturas.html', context)
@@ -212,6 +242,9 @@ def detalhe_estrutura(request, slug):
     posicoes_abertas = [p for p in posicoes_all if p.quantidade_atual != 0]
     posicoes_fechadas = [p for p in posicoes_all if p.quantidade_atual == 0]
     
+    exposicao_comprada = sum((p.quantidade_atual * p.ultimo_preco) for p in posicoes_abertas if p.quantidade_atual > 0)
+    exposicao_vendida = sum((abs(p.quantidade_atual) * p.ultimo_preco) for p in posicoes_abertas if p.quantidade_atual < 0)
+    
     # Calcula datas para posições fechadas
     for pos in posicoes_fechadas:
         ordens_pos = Ordem.objects.filter(estrutura=estrutura, ativo=pos.ativo).order_by('data')
@@ -237,12 +270,15 @@ def detalhe_estrutura(request, slug):
         'estrutura': estrutura,
         'posicoes_abertas': posicoes_abertas,
         'posicoes_fechadas': posicoes_fechadas,
+        'exposicao_comprada': exposicao_comprada,
+        'exposicao_vendida': exposicao_vendida,
         'page_obj': page_obj,
         'snapshots': snapshots,
         'datas_chart': json.dumps(datas_chart),
         'valores_chart': json.dumps(valores_chart),
         'exposicao_chart': json.dumps(exposicao_chart),
         'has_open_positions': len(posicoes_abertas) > 0,
+        'spreads_vinculados': estrutura.spreads.prefetch_related('legs__ativo').all(),
     }
     return render(request, 'trading/detalhe_estrutura.html', context)
 
@@ -422,8 +458,13 @@ def lista_rolagens(request):
 @login_required
 def criar_rolagem(request):
     """Cria uma nova simulação de rolagem."""
+    estrutura_id = request.GET.get('estrutura_id')
+    initial = {}
+    if estrutura_id:
+        initial['estrutura'] = estrutura_id
+        
     if request.method == 'POST':
-        form = RolagemForm(request.POST)
+        form = RolagemForm(request.POST, user=request.user)
         formset = RolagemLegFormSet(request.POST)
         if form.is_valid() and formset.is_valid():
             rolagem = form.save(commit=False)
@@ -439,9 +480,12 @@ def criar_rolagem(request):
             
             recalcular_rolagem(rolagem)
             messages.success(request, f"Spread '{rolagem.nome}' criado com sucesso!")
+            
+            if rolagem.estrutura:
+                return redirect('trading:detalhe_estrutura', slug=rolagem.estrutura.slug)
             return redirect('trading:lista_rolagens')
     else:
-        form = RolagemForm()
+        form = RolagemForm(user=request.user, initial=initial)
         formset = RolagemLegFormSet()
     
     return render(request, 'trading/rolagem_form.html', {
@@ -479,7 +523,7 @@ def editar_rolagem(request, slug):
     """Edita uma rolagem existente e dispara o recálculo."""
     rolagem = get_object_or_404(Rolagem, usuario=request.user, slug=slug)
     if request.method == 'POST':
-        form = RolagemForm(request.POST, instance=rolagem)
+        form = RolagemForm(request.POST, instance=rolagem, user=request.user)
         formset = RolagemLegFormSet(request.POST, instance=rolagem)
         if form.is_valid() and formset.is_valid():
             form.save()
@@ -498,9 +542,12 @@ def editar_rolagem(request, slug):
             
             recalcular_rolagem(rolagem)
             messages.success(request, "Spread atualizado e histórico recalculado.")
+            
+            if rolagem.estrutura and 'origem' in request.GET and request.GET['origem'] == 'estrutura':
+                return redirect('trading:detalhe_estrutura', slug=rolagem.estrutura.slug)
             return redirect('trading:detalhe_rolagem', slug=rolagem.slug)
     else:
-        form = RolagemForm(instance=rolagem)
+        form = RolagemForm(instance=rolagem, user=request.user)
         formset = RolagemLegFormSet(instance=rolagem)
         # Pre-fill ticker
         for i, leg in enumerate(rolagem.legs.all()):
@@ -610,3 +657,59 @@ def dashboard(request):
         'report_empty': report is None,
     }
     return render(request, 'trading/dashboard.html', context)
+
+
+@login_required
+def posicoes_view(request):
+    """
+    Exibe todas as posições em opções do usuário, independentemente da estrutura.
+    Separadas em: posições abertas (qtd != 0) e encerradas (qtd == 0).
+    """
+    from core.models import HistoricoPreco, AtivoB3
+    from decimal import Decimal
+
+    # Busca todas as posições consolidadas do usuário
+    todas_posicoes = PosicaoConsolidada.objects.filter(
+        estrutura__usuario=request.user
+    ).select_related('ativo', 'estrutura').order_by('ativo__ticker')
+
+    posicoes_abertas = []
+    posicoes_encerradas = []
+
+    for pos in todas_posicoes:
+        if pos.quantidade_atual != 0:
+            # Enriquece com último preço
+            hist = HistoricoPreco.objects.filter(
+                ativo=pos.ativo,
+                fechamento__gt=0
+            ).order_by('-data_pregao').first()
+
+            if hist:
+                pos.ultimo_preco = hist.fechamento
+                pos.data_ultimo_preco = hist.data_pregao
+            else:
+                pos.ultimo_preco = pos.preco_medio
+                pos.data_ultimo_preco = None
+
+            if pos.quantidade_atual > 0:
+                pos.pl_aberto_calc = (pos.ultimo_preco - pos.preco_medio) * pos.quantidade_atual
+            else:
+                pos.pl_aberto_calc = (pos.preco_medio - pos.ultimo_preco) * abs(pos.quantidade_atual)
+
+            pos.pl_total = pos.pl_realizado_acumulado + pos.pl_aberto_calc
+            posicoes_abertas.append(pos)
+        else:
+            pos.pl_total = pos.pl_realizado_acumulado
+            posicoes_encerradas.append(pos)
+
+    from django.core.paginator import Paginator
+    paginator = Paginator(posicoes_encerradas, 30)
+    page_number = request.GET.get('page')
+    page_encerradas = paginator.get_page(page_number)
+
+    context = {
+        'posicoes_abertas': posicoes_abertas,
+        'page_encerradas': page_encerradas,
+    }
+    return render(request, 'trading/posicoes.html', context)
+

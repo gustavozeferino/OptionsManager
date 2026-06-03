@@ -186,11 +186,15 @@
 
     <div class="kpi-card accent4">
         <i class="fas fa-balance-scale kpi-icon"></i>
-        <div class="kpi-label">Exposição</div>
-        <div class="kpi-value val-neu">
+        <div class="kpi-label">Exposição Líquida</div>
+        <div class="kpi-value {% if total_exposicao > 0 %}val-pos{% elif total_exposicao < 0 %}val-neg{% else %}val-neu{% endif %}">
             R$ {{ total_exposicao|floatformat:2|intcomma }}
         </div>
-        <div class="kpi-sub">Capital em risco</div>
+        <div style="font-size: .75rem; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
+            <span class="val-pos" title="Exposição Comprada"><i class="fas fa-long-arrow-alt-up"></i> {{ exposicao_comprada_global|floatformat:2|intcomma }}</span>
+            <span style="color:var(--dash-muted); margin:0 4px;">|</span>
+            <span class="val-neg" title="Exposição Vendida"><i class="fas fa-long-arrow-alt-down"></i> {{ exposicao_vendida_global|floatformat:2|intcomma }}</span>
+        </div>
     </div>
 
     <div class="kpi-card accent5">

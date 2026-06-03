@@ -195,22 +195,86 @@ def sincronizar_historico_preco(min_date=None, task_id=None):
     logger.info(f"Sincronizacao concluida. {total_sucesso} registros atualizados.")
     return total_sucesso
 
-def rotinas_automaticas_pos_ingestao(nova_data_minima):
+def rotinas_automaticas_pos_ingestao(nova_data_minima, task_id=None):
     """Executa consolidacao, sync e recalculos a partir da menor data identificada na ingestao"""
     if not nova_data_minima:
         return
         
     try:
+        if task_id: cache.set(f'task_{task_id}_stage', 'Consolidando Negócios (2/3)', timeout=3600)
         # 1. Consolidar
-        consolidar_negocios(nova_data_minima)
+        consolidar_negocios(nova_data_minima, task_id=None) # task_id=None aqui para não sobreescrever o 0-100 da etapa inteira
+        if task_id: cache.set(f'task_{task_id}', 60, timeout=3600)
         
         # 2. Sincronizar Historico Preco
-        sincronizar_historico_preco(nova_data_minima)
+        sincronizar_historico_preco(nova_data_minima, task_id=None)
+        if task_id: cache.set(f'task_{task_id}', 70, timeout=3600)
         
+        if task_id: cache.set(f'task_{task_id}_stage', 'Ajustes de Cálculos e Estruturas (3/3)', timeout=3600)
         # 3. Recalcular Rolagens
         recalcular_todas_rolagens()
+        if task_id: cache.set(f'task_{task_id}', 85, timeout=3600)
         
-        # A instrucao mencionava "Recalcular estruturas" mas o app trading recalcula as estruturas na view ou com sinais.
+        # 4. Recalcular Estruturas
+        from trading.models import Estrutura
+        from trading.services import recalcular_estrutura
+        for est in Estrutura.objects.all():
+            recalcular_estrutura(est)
+        
+        if task_id: cache.set(f'task_{task_id}', 100, timeout=3600)
         logger.info("Rotinas automaticas pos ingestao concluidas com sucesso.")
     except Exception as e:
         logger.error(f"Erro ao executar rotinas automaticas pos ingestao: {e}")
+
+def sincronizar_posicoes_abertas():
+    """Sincroniza PosicaoAberta (dadosb3) para OpenInterest (core)"""
+    from dadosb3.models import PosicaoAberta
+    from core.models import OpenInterest, AtivoB3, AtivoMonitorado
+    from django.db import transaction
+    
+    logger.info("Iniciando sincronização de posições em aberto")
+    ativos_monitorados = AtivoMonitorado.objects.filter(ativo_no_dashboard=True).values_list('ticker', flat=True)
+    mapa_objetos = {a.codigo_isin: a for a in AtivoB3.objects.filter(ativo_objeto__in=ativos_monitorados)}
+    set_isins = set(mapa_objetos.keys())
+    
+    if not set_isins:
+        return 0
+
+    posicoes = PosicaoAberta.objects.filter(isin__in=set_isins)
+    sucesso = 0
+    
+    for chunk in [posicoes[i:i + 2000] for i in range(0, posicoes.count(), 2000)]:
+        with transaction.atomic():
+            for p in chunk:
+                ativo_obj = mapa_objetos.get(p.isin)
+                if not ativo_obj: continue
+                
+                # Regra de total = abertos + descobertos + travas
+                tot_pos = (p.contratos_abertos or 0) + (p.qtd_descoberta or 0) + (p.posicoes_bloqueadas or 0)
+                
+                OpenInterest.objects.update_or_create(
+                    ativo=ativo_obj,
+                    data_referencia=p.data,
+                    defaults={
+                        'ticker': p.ticker or '',
+                        'ativo_objeto': ativo_obj.ativo_objeto or '',
+                        'codigo_expiracao': p.codigo_expiracao or '',
+                        'segmento': p.segmento or '',
+                        'contratos_em_aberto': p.contratos_abertos or 0,
+                        'variacao_contratos': p.variacao_abertos or 0,
+                        'id_distribuicao': p.id_distribuicao or '',
+                        'quantidade_coberta': p.qtd_coberta or 0,
+                        'total_travas': p.posicoes_bloqueadas or 0,
+                        'quantidade_descoberta': p.qtd_descoberta or 0,
+                        'total_posicoes': tot_pos,
+                        'quantidade_tomadores': p.qtd_tomadores or 0,
+                        'quantidade_doadores': p.qtd_doadores or 0,
+                        'quantidade_atual': p.qtd_atual or 0,
+                        'contratos_travados': p.contratos_travados or 0,
+                        'contratos_transferencia': p.contratos_transferidos or 0,
+                        'preco_termo': p.preco_termo or 0
+                    }
+                )
+                sucesso += 1
+    logger.info(f"Sincronização de posições em aberto concluída: {sucesso} registros.")
+    return sucesso

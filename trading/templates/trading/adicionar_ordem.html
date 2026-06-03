@@ -7,7 +7,7 @@
     <div class="col-md-8">
         <div class="card shadow-sm border-0 mt-4">
             <div class="card-header bg-dark text-white py-3">
-                <h4 class="mb-0"><i class="fas fa-plus-circle me-2"></i>Nova Ordem: {{ estrutura.nome }}</h4>
+                <h4 class="mb-0"><i class="fas {% if edit_mode %}fa-edit{% else %}fa-plus-circle{% endif %} me-2"></i>{% if edit_mode %}Editar Ordem{% else %}Nova Ordem{% endif %}: {{ estrutura.nome }}</h4>
             </div>
             <div class="card-body p-4">
                 <form method="post" autocomplete="off">
@@ -72,8 +72,10 @@
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
                         <a href="{% url 'trading:detalhe_estrutura' estrutura.slug %}"
                             class="btn btn-outline-secondary px-4 me-md-2">Cancelar</a>
+                        {% if not edit_mode %}
                         <button type="submit" name="salvar_e_adicionar" value="1"
                             class="btn btn-primary px-4 me-md-2">Salvar e Adicionar Outra</button>
+                        {% endif %}
                         <button type="submit" class="btn btn-success px-4">Salvar Ordem</button>
                     </div>
                 </form>

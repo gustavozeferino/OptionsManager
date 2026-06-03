@@ -17,6 +17,7 @@ from django.core.cache import cache
 from django.core.files.storage import FileSystemStorage
 from django.conf import settings
 import unicodedata
+from difflib import SequenceMatcher
 from .models import Instrumento, BoletimNegocioDiario, CotacaoHistorica, NegocioDiario, PosicaoAberta, LogProcessamento, InstrumentoAtualizacao
 from .services import ingest_cothist_file
 from .automation import rotinas_automaticas_pos_ingestao, consolidar_negocios, sincronizar_historico_preco
@@ -338,14 +339,16 @@ def ingest_negocios(file_path, task_id, filename):
             stats = cache.get(f'task_{task_id}_stats') or {'start_time': time.time()}
             elapsed = max(1, time.time() - stats['start_time'])
             cache.set(f'task_{task_id}_stats', {'processed': processed_lines, 'total': total_lines, 'speed': processed_lines / elapsed, 'start_time': stats['start_time']}, timeout=3600)
-            cache.set(f'task_{task_id}', min(99, math.floor((processed_lines / total_lines) * 100)), timeout=3600)
+            cache.set(f'task_{task_id}', min(49, math.floor((processed_lines / total_lines) * 50)), timeout=3600)
+            cache.set(f'task_{task_id}_stage', 'Lendo e salvando dados brutos (Ingestão) - Etapa 1/3', timeout=3600)
             
         if 'min_date' in locals() and min_date:
             logger.info(f"Executando rotinas pos ingestao a partir de {min_date}")
-            rotinas_automaticas_pos_ingestao(min_date)
+            rotinas_automaticas_pos_ingestao(min_date, task_id)
             
         logger.info(f"Sucesso ao processar arquivo de negócios: {filename}")
         LogProcessamento.objects.create(nome_arquivo=filename, status='Sucesso', descricao_falha='-')
+        cache.set(f'task_{task_id}_stage', 'Finalizado', timeout=3600)
         cache.set(f'task_{task_id}', 100, timeout=3600)
     except Exception as e:
         error_msg = str(e)
@@ -431,6 +434,10 @@ def ingest_posicoes(file_path, task_id, filename):
             
         logger.info(f"Sucesso ao processar arquivo de posições: {filename}")
         LogProcessamento.objects.create(nome_arquivo=filename, status='Sucesso', descricao_falha='-')
+        from .automation import sincronizar_posicoes_abertas
+        cache.set(f'task_{task_id}_stage', 'Sincronizando posições... (2/2)', timeout=3600)
+        sincronizar_posicoes_abertas()
+        cache.set(f'task_{task_id}_stage', 'Finalizado', timeout=3600)
         cache.set(f'task_{task_id}', 100, timeout=3600)
     except Exception as e:
         error_msg = str(e)
@@ -491,43 +498,86 @@ def ingest_cothist_web(file_path, task_id, filename):
             try: os.remove(file_path)
             except: pass
 
+def handle_upload_post(request, target_func):
+    file = request.FILES['file']
+    
+    fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file.name)[1])
+    with os.fdopen(fd, 'wb') as f:
+        for chunk in file.chunks():
+            f.write(chunk)
+    
+    filename = file.name
+    file_path = temp_path
+    
+    task_id = str(uuid.uuid4())
+    cache.set(f'task_{task_id}', 0, timeout=3600)
+    cache.set(f'task_{task_id}_stats', {'processed': 0, 'total': 1, 'speed': 0, 'start_time': time.time()}, timeout=3600)
+    
+    if target_func:
+        thread = threading.Thread(target=target_func, args=(file_path, task_id, filename))
+        thread.daemon = True
+        thread.start()
+        
+    return JsonResponse({'task_id': task_id})
+
+def get_upload_context(file_type, title, icon, color):
+    # Usaremos os últimos 10 logs no geral para o histórico da tabela
+    logs = LogProcessamento.objects.order_by('-data_hora')[:10]
+    return {
+        'file_type': file_type,
+        'title': title,
+        'icon': icon,
+        'color': color,
+        'recent_logs': logs
+    }
+
 @login_required
 @user_passes_test(is_admin)
-def upload_view(request):
+def upload_cadastro_view(request):
     if request.method == 'POST' and request.FILES.get('file'):
-        file = request.FILES['file']
+        return handle_upload_post(request, ingest_cadastro)
+    return render(request, 'dadosb3/upload.html', get_upload_context('cadastro', 'Cadastro de Instrumentos', 'fa-clipboard-list', 'text-primary'))
+
+@login_required
+@user_passes_test(is_admin)
+def upload_negocios_view(request):
+    if request.method == 'POST' and request.FILES.get('file'):
+        return handle_upload_post(request, ingest_negocios)
+    return render(request, 'dadosb3/upload.html', get_upload_context('negocios', 'Negócios Consolidados', 'fa-handshake', 'text-success'))
+
+@login_required
+@user_passes_test(is_admin)
+def upload_posicoes_view(request):
+    if request.method == 'POST' and request.FILES.get('file'):
+        return handle_upload_post(request, ingest_posicoes)
+    return render(request, 'dadosb3/upload.html', get_upload_context('posicoes', 'Posições em Aberto', 'fa-chart-pie', 'text-purple'))
+
+@login_required
+@user_passes_test(is_admin)
+def upload_cothist_view(request):
+    if request.method == 'POST' and request.FILES.get('file'):
+        return handle_upload_post(request, ingest_cothist_web)
+    return render(request, 'dadosb3/upload.html', get_upload_context('cotacao_historica', 'Cotação Histórica B3', 'fa-history', 'text-warning'))
+
+@login_required
+@user_passes_test(is_admin)
+def check_filename(request):
+    filename = request.GET.get('filename')
+    
+    last_uploads = LogProcessamento.objects.filter(status='Sucesso').order_by('-data_hora')[:50]
+    if not last_uploads.exists():
+        return JsonResponse({'warning': False})
         
-        fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file.name)[1])
-        with os.fdopen(fd, 'wb') as f:
-            for chunk in file.chunks():
-                f.write(chunk)
-        
-        filename = file.name
-        file_path = temp_path
-        
-        task_id = str(uuid.uuid4())
-        cache.set(f'task_{task_id}', 0, timeout=3600)
-        cache.set(f'task_{task_id}_stats', {'processed': 0, 'total': 1, 'speed': 0, 'start_time': time.time()}, timeout=3600)
-        
-        file_type = request.POST.get('file_type')
-        if file_type == 'cadastro':
-            target_func = ingest_cadastro
-        elif file_type == 'negocios':
-            target_func = ingest_negocios
-        elif file_type == 'posicoes':
-            target_func = ingest_posicoes
-        elif file_type == 'cotacao_historica':
-            target_func = ingest_cothist_web
-        else:
-            target_func = None
+    best_similarity = 0
+    for log in last_uploads:
+        sim = SequenceMatcher(None, filename.lower(), log.nome_arquivo.lower()).ratio()
+        if sim > best_similarity:
+            best_similarity = sim
             
-        if target_func:
-            thread = threading.Thread(target=target_func, args=(file_path, task_id, filename))
-            thread.daemon = True
-            thread.start()
-            
-        return JsonResponse({'task_id': task_id})
-    return render(request, 'dadosb3/upload.html')
+    if best_similarity < 0.90:
+        return JsonResponse({'warning': True, 'message': 'O nome do arquivo selecionado é muito diferente dos uploads anteriores. Tem certeza que é o arquivo correto?'})
+    
+    return JsonResponse({'warning': False})
 
 @login_required
 @user_passes_test(is_admin)
@@ -536,9 +586,10 @@ def upload_progress(request, task_id):
     error = cache.get(f'task_{task_id}_error', None)
     summary = cache.get(f'task_{task_id}_summary', None)
     stats = cache.get(f'task_{task_id}_stats', {})
+    stage = cache.get(f'task_{task_id}_stage', 'Processando...')
     if error:
-        return JsonResponse({'progress': progress, 'error': error, 'stats': stats})
-    return JsonResponse({'progress': progress, 'summary': summary, 'stats': stats})
+        return JsonResponse({'progress': progress, 'error': error, 'stats': stats, 'stage': stage})
+    return JsonResponse({'progress': progress, 'summary': summary, 'stats': stats, 'stage': stage})
 
 @login_required
 @user_passes_test(is_admin)

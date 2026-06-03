@@ -1,101 +1,155 @@
 {% extends 'base.html' %}
 {% load humanize %}
 
-{% block title %}Relatórios e Performance - OptionsManager{% endblock %}
+{% block title %}Relatórios e Performance — OptionsManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ─── KPI STRIP (same as dashboard) ─── */
+    .kpi-strip { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 28px; }
+    .kpi-card {
+        background: var(--dash-card);
+        border: 1px solid var(--dash-border);
+        border-radius: 16px;
+        padding: 20px 22px;
+        position: relative;
+        overflow: hidden;
+        transition: transform .18s, box-shadow .18s;
+    }
+    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 36px rgba(0,0,0,.4); }
+    .kpi-card::before {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        border-radius: 16px 16px 0 0;
+    }
+    .kpi-card.accent1::before { background: linear-gradient(90deg, #6c63ff, #9c8cf8); }
+    .kpi-card.accent4::before { background: linear-gradient(90deg, #0ea5e9, #38bdf8); }
+    .kpi-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; color: var(--dash-muted); margin-bottom: 6px; }
+    .kpi-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+    .kpi-sub   { font-size: .75rem; color: var(--dash-muted); margin-top: 4px; }
+    .kpi-icon  { position: absolute; right: 18px; top: 18px; font-size: 1.5rem; opacity: .18; }
+    .val-pos { color: var(--color-compra) !important; }
+    .val-neg { color: var(--color-venda) !important; }
+    .val-neu { color: var(--dash-text); }
+
+    .report-chart { height: 280px; }
+
+    @media (max-width: 600px) {
+        .kpi-strip { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="fas fa-chart-line me-2 text-primary"></i> Relatórios e Performance</h2>
+
+{# ─── HEADER ─── #}
+<div class="d-flex justify-content-between align-items-center mb-4" style="padding-top:4px;">
     <div>
-        <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left me-1"></i> Dashboard
-        </a>
+        <h4 class="mb-0 fw-bold" style="color:var(--dash-text);">
+            <i class="fas fa-chart-line me-2" style="color:var(--dash-accent);"></i>Relatórios e Performance
+        </h4>
+        <span style="font-size:.78rem; color:var(--dash-muted);">Análise histórica de resultados e exposição</span>
     </div>
+    <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i> Estruturas
+    </a>
 </div>
 
 {% if empty %}
-<div class="alert alert-info shadow-sm">
-    <i class="fas fa-info-circle me-2"></i> Ainda não há dados históricos suficientes para gerar os relatórios. 
-    Comece adicionando ordens às suas estruturas.
+<div class="mod-card">
+    <div style="padding: 60px 20px; text-align: center; color: var(--dash-muted);">
+        <i class="fas fa-chart-line" style="font-size: 3rem; opacity: .3; display: block; margin-bottom: 16px;"></i>
+        <p style="font-size: .95rem; margin-bottom: 8px;">Ainda não há dados históricos suficientes para gerar os relatórios.</p>
+        <p style="font-size: .82rem;">Comece adicionando ordens às suas estruturas.</p>
+        <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-primary mt-2">
+            <i class="fas fa-layer-group me-1"></i> Ver Estruturas
+        </a>
+    </div>
 </div>
 {% else %}
 
-<!-- Cards de Resumo Rápido -->
-<div class="row mb-4">
-    <div class="col-md-6">
-        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase small">Patrimônio Atual</h6>
-                <h2 class="mb-0">R$ {{ total_atual|floatformat:2|intcomma }}</h2>
-            </div>
+{# ─── KPI STRIP ─── #}
+<div class="kpi-strip">
+    <div class="kpi-card accent1">
+        <i class="fas fa-wallet kpi-icon"></i>
+        <div class="kpi-label">Patrimônio Atual</div>
+        <div class="kpi-value {% if total_atual > 0 %}val-pos{% elif total_atual < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ total_atual|floatformat:2|intcomma }}
         </div>
+        <div class="kpi-sub">Valor total acumulado</div>
     </div>
-    <div class="col-md-6">
-        <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase small">Exposição Atual</h6>
-                <h2 class="mb-0 text-info">R$ {{ exposicao_atual|floatformat:2|intcomma }}</h2>
-            </div>
+
+    <div class="kpi-card accent4">
+        <i class="fas fa-balance-scale kpi-icon"></i>
+        <div class="kpi-label">Exposição Líquida</div>
+        <div class="kpi-value {% if exposicao_atual > 0 %}val-pos{% elif exposicao_atual < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ exposicao_atual|floatformat:2|intcomma }}
+        </div>
+        <div style="font-size: .75rem; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
+            <span class="val-pos" title="Exposição Comprada"><i class="fas fa-long-arrow-alt-up"></i> {{ exposicao_comprada_global|floatformat:2|intcomma }}</span>
+            <span style="color:var(--dash-muted); margin:0 4px;">|</span>
+            <span class="val-neg" title="Exposição Vendida"><i class="fas fa-long-arrow-alt-down"></i> {{ exposicao_vendida_global|floatformat:2|intcomma }}</span>
         </div>
     </div>
 </div>
 
-<!-- Gráficos Principais -->
+{# ─── EQUITY + MENSAL ─── #}
 <div class="row mb-4">
-    <!-- Evolução Patrimonial -->
     <div class="col-lg-8 mb-4">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white pt-3 border-bottom-0">
-                <h5 class="card-title"><i class="fas fa-chart-area me-2 text-primary"></i> Evolução Patrimonial (Equity)</h5>
-            </div>
-            <div class="card-body">
-                <div style="position: relative; height: 300px;">
-                    <canvas id="equityChart"></canvas>
+        <div class="mod-card h-100">
+            <div class="mod-header">
+                <div class="mod-title">
+                    <i class="fas fa-chart-area" style="color:var(--dash-accent);"></i>
+                    Evolução Patrimonial (Equity)
                 </div>
+            </div>
+            <div style="padding: 20px;">
+                <div id="equityChart" class="report-chart"></div>
             </div>
         </div>
     </div>
-    
-    <!-- Resultado Mensal -->
+
     <div class="col-lg-4 mb-4">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white pt-3 border-bottom-0">
-                <h5 class="card-title"><i class="fas fa-calendar-alt me-2 text-success"></i> Resultado Mensal</h5>
-            </div>
-            <div class="card-body">
-                <div style="position: relative; height: 300px;">
-                    <canvas id="monthlyChart"></canvas>
+        <div class="mod-card h-100">
+            <div class="mod-header">
+                <div class="mod-title">
+                    <i class="fas fa-calendar-alt" style="color:var(--color-compra);"></i>
+                    Resultado Mensal
                 </div>
+            </div>
+            <div style="padding: 20px;">
+                <div id="monthlyChart" class="report-chart"></div>
             </div>
         </div>
     </div>
 </div>
 
+{# ─── SEMANAL + EXPOSIÇÃO ─── #}
 <div class="row mb-4">
-    <!-- Resultado Semanal -->
     <div class="col-lg-6 mb-4">
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-white pt-3 border-bottom-0">
-                <h5 class="card-title"><i class="fas fa-calendar-week me-2 text-info"></i> Resultado Semanal</h5>
-            </div>
-            <div class="card-body">
-                <div style="position: relative; height: 300px;">
-                    <canvas id="weeklyChart"></canvas>
+        <div class="mod-card">
+            <div class="mod-header">
+                <div class="mod-title">
+                    <i class="fas fa-calendar-week" style="color:var(--color-call);"></i>
+                    Resultado Semanal
                 </div>
+            </div>
+            <div style="padding: 20px;">
+                <div id="weeklyChart" class="report-chart"></div>
             </div>
         </div>
     </div>
-    
-    <!-- Exposição Histórica -->
+
     <div class="col-lg-6 mb-4">
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-white pt-3 border-bottom-0">
-                <h5 class="card-title"><i class="fas fa-shield-alt me-2 text-warning"></i> Exposição Histórica</h5>
-            </div>
-            <div class="card-body">
-                <div style="position: relative; height: 300px;">
-                    <canvas id="exposureChart"></canvas>
+        <div class="mod-card">
+            <div class="mod-header">
+                <div class="mod-title">
+                    <i class="fas fa-shield-alt" style="color:var(--color-put);"></i>
+                    Exposição Histórica
                 </div>
+            </div>
+            <div style="padding: 20px;">
+                <div id="exposureChart" class="report-chart"></div>
             </div>
         </div>
     </div>
@@ -105,157 +159,129 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     {% if not empty %}
-    const equityDatas = JSON.parse('{{ equity_datas|escapejs }}');
+
+    const colPos   = getComputedStyle(document.documentElement).getPropertyValue('--color-compra').trim() || '#10b981';
+    const colNeg   = getComputedStyle(document.documentElement).getPropertyValue('--color-venda').trim() || '#ef4444';
+    const colMuted = getComputedStyle(document.documentElement).getPropertyValue('--dash-muted').trim() || '#8892a4';
+    const colAccent = getComputedStyle(document.documentElement).getPropertyValue('--dash-accent').trim() || '#6c63ff';
+    const colCall  = getComputedStyle(document.documentElement).getPropertyValue('--color-call').trim() || '#00d4aa';
+    const colPut   = getComputedStyle(document.documentElement).getPropertyValue('--color-put').trim() || '#f59e0b';
+
+    const equityDatas   = JSON.parse('{{ equity_datas|escapejs }}');
     const equityValores = JSON.parse('{{ equity_valores|escapejs }}');
     const equityExposicao = JSON.parse('{{ equity_exposicao|escapejs }}');
     const monthlyLabels = JSON.parse('{{ monthly_labels|escapejs }}');
     const monthlyValues = JSON.parse('{{ monthly_values|escapejs }}');
-    const weeklyLabels = JSON.parse('{{ weekly_labels|escapejs }}');
-    const weeklyValues = JSON.parse('{{ weekly_values|escapejs }}');
+    const weeklyLabels  = JSON.parse('{{ weekly_labels|escapejs }}');
+    const weeklyValues  = JSON.parse('{{ weekly_values|escapejs }}');
 
-    const ctxEquity = document.getElementById('equityChart').getContext('2d');
-    new Chart(ctxEquity, {
-        type: 'line',
-        data: {
-            labels: equityDatas,
-            datasets: [{
-                label: 'Patrimônio',
-                data: equityValores,
-                borderColor: '#0d6efd',
-                backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                fill: true,
-                tension: 0.3,
-                borderWidth: 3,
-                pointRadius: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { 
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'Valor: ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.raw);
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: { 
-                    ticks: { 
-                        callback: function(value) {
-                            return 'R$ ' + value.toLocaleString('pt-BR');
-                        }
-                    }
-                }
-            }
-        }
+    function fmtBRL(v) {
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+    }
+
+    const commonTooltip = {
+        trigger: 'axis',
+        backgroundColor: '#1a1d27',
+        borderColor: 'rgba(255,255,255,.1)',
+        textStyle: { color: '#e2e8f0' }
+    };
+
+    const xAxisStyle = (labels) => ({
+        type: 'category', data: labels,
+        axisLabel: { color: colMuted, fontSize: 10, rotate: 30 },
+        axisLine: { lineStyle: { color: 'rgba(255,255,255,.08)' } }
     });
 
-    const ctxMonthly = document.getElementById('monthlyChart').getContext('2d');
-    new Chart(ctxMonthly, {
-        type: 'bar',
-        data: {
-            labels: monthlyLabels,
-            datasets: [{
-                label: 'Lucro/Prejuízo',
-                data: monthlyValues,
-                backgroundColor: monthlyValues.map(v => v >= 0 ? 'rgba(25, 135, 84, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
-                borderColor: monthlyValues.map(v => v >= 0 ? '#198754' : '#dc3545'),
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { 
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'Resultado: ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.raw);
-                        }
-                    }
-                }
-            }
-        }
-    });
+    const yAxisStyle = {
+        type: 'value',
+        axisLabel: { color: colMuted, fontSize: 9, formatter: v => 'R$' + (Math.abs(v) >= 1000 ? (v/1000).toFixed(1)+'k' : v) },
+        splitLine: { lineStyle: { color: 'rgba(255,255,255,.05)' } }
+    };
 
-    const ctxWeekly = document.getElementById('weeklyChart').getContext('2d');
-    new Chart(ctxWeekly, {
-        type: 'bar',
-        data: {
-            labels: weeklyLabels,
-            datasets: [{
-                label: 'Resultado Semanal',
-                data: weeklyValues,
-                backgroundColor: 'rgba(13, 202, 240, 0.7)',
-                borderColor: '#0dcaf0',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { 
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'Resultado: ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.raw);
-                        }
-                    }
-                }
+    /* ─── EQUITY CHART ─── */
+    const lastEquity = equityValores.length ? equityValores[equityValores.length - 1] : 0;
+    const equityColor = lastEquity >= 0 ? colPos : colNeg;
+    const equityChart = echarts.init(document.getElementById('equityChart'), 'dark');
+    equityChart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { ...commonTooltip, formatter: p => `${p[0].axisValue}<br/>${p[0].marker} Patrimônio: <b>${fmtBRL(p[0].value)}</b>` },
+        grid: { top: 10, bottom: 50, left: 14, right: 14, containLabel: true },
+        xAxis: xAxisStyle(equityDatas),
+        yAxis: yAxisStyle,
+        series: [{
+            type: 'line', data: equityValores, smooth: true, symbol: 'none',
+            lineStyle: { color: equityColor, width: 2.5 },
+            areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: equityColor.replace('rgb(', 'rgba(').replace(')', ', 0.35)') || 'rgba(108,99,255,0.35)' },
+                    { offset: 1, color: 'rgba(108,99,255,0)' }
+                ])
             }
-        }
+        }]
     });
+    window.addEventListener('resize', () => equityChart.resize());
 
-    const ctxExposure = document.getElementById('exposureChart').getContext('2d');
-    new Chart(ctxExposure, {
-        type: 'line',
-        data: {
-            labels: equityDatas,
-            datasets: [{
-                label: 'Exposição',
-                data: equityExposicao,
-                borderColor: '#ffc107',
-                backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                fill: true,
-                tension: 0.1,
-                borderWidth: 2,
-                pointRadius: 0
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { 
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'Exposição: ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.raw);
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: { 
-                    ticks: { 
-                        callback: function(value) {
-                            return 'R$ ' + value.toLocaleString('pt-BR');
-                        }
-                    }
-                }
+    /* ─── MONTHLY CHART ─── */
+    const monthlyChart = echarts.init(document.getElementById('monthlyChart'), 'dark');
+    monthlyChart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { ...commonTooltip, formatter: p => `${p[0].axisValue}<br/>${p[0].marker} Resultado: <b>${fmtBRL(p[0].value)}</b>` },
+        grid: { top: 10, bottom: 60, left: 14, right: 14, containLabel: true },
+        xAxis: xAxisStyle(monthlyLabels),
+        yAxis: yAxisStyle,
+        series: [{
+            type: 'bar', data: monthlyValues,
+            itemStyle: {
+                borderRadius: [4, 4, 0, 0],
+                color: p => p.value >= 0 ? colPos : colNeg
             }
-        }
+        }]
     });
+    window.addEventListener('resize', () => monthlyChart.resize());
+
+    /* ─── WEEKLY CHART — cores positivo/negativo ─── */
+    const weeklyChart = echarts.init(document.getElementById('weeklyChart'), 'dark');
+    weeklyChart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { ...commonTooltip, formatter: p => `${p[0].axisValue}<br/>${p[0].marker} Resultado: <b>${fmtBRL(p[0].value)}</b>` },
+        grid: { top: 10, bottom: 60, left: 14, right: 14, containLabel: true },
+        xAxis: xAxisStyle(weeklyLabels),
+        yAxis: yAxisStyle,
+        series: [{
+            type: 'bar', data: weeklyValues,
+            itemStyle: {
+                borderRadius: [4, 4, 0, 0],
+                color: p => p.value >= 0 ? colPos : colNeg
+            }
+        }]
+    });
+    window.addEventListener('resize', () => weeklyChart.resize());
+
+    /* ─── EXPOSURE CHART ─── */
+    const exposureChart = echarts.init(document.getElementById('exposureChart'), 'dark');
+    exposureChart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { ...commonTooltip, formatter: p => `${p[0].axisValue}<br/>${p[0].marker} Exposição: <b>${fmtBRL(p[0].value)}</b>` },
+        grid: { top: 10, bottom: 50, left: 14, right: 14, containLabel: true },
+        xAxis: xAxisStyle(equityDatas),
+        yAxis: yAxisStyle,
+        series: [{
+            type: 'line', data: equityExposicao, smooth: true, symbol: 'none',
+            lineStyle: { color: colPut, width: 2 },
+            areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: 'rgba(245,158,11,0.25)' },
+                    { offset: 1, color: 'rgba(245,158,11,0)' }
+                ])
+            }
+        }]
+    });
+    window.addEventListener('resize', () => exposureChart.resize());
+
     {% endif %}
 });
 </script>

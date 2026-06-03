@@ -1,347 +1,450 @@
 {% extends 'base.html' %}
 {% load humanize %}
 
-{% block title %}Detalhe: {{ estrutura.nome }} - OptionsManager{% endblock %}
+{% block title %}{{ estrutura.nome }} — OptionsManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ─── KPI STRIP ─── */
+    .kpi-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 24px; }
+    .kpi-card {
+        background: var(--dash-card);
+        border: 1px solid var(--dash-border);
+        border-radius: 14px;
+        padding: 16px 18px;
+        position: relative;
+        overflow: hidden;
+        transition: transform .18s, box-shadow .18s;
+    }
+    .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+    .kpi-card::before {
+        content:''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        border-radius: 14px 14px 0 0;
+    }
+    .kpi-card.a1::before { background: linear-gradient(90deg,#6c63ff,#9c8cf8); }
+    .kpi-card.a2::before { background: linear-gradient(90deg,#10b981,#34d399); }
+    .kpi-card.a3::before { background: linear-gradient(90deg,#f59e0b,#fbbf24); }
+    .kpi-card.a4::before { background: linear-gradient(90deg,#0ea5e9,#38bdf8); }
+    .kpi-card.a5::before { background: linear-gradient(90deg,#ec4899,#f472b6); }
+    .kpi-card.a6::before { background: linear-gradient(90deg,#8b5cf6,#a78bfa); }
+    .kpi-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--dash-muted); margin-bottom: 5px; }
+    .kpi-value { font-size: 1.25rem; font-weight: 700; line-height: 1.1; }
+    .kpi-icon  { position: absolute; right: 14px; top: 14px; font-size: 1.3rem; opacity: .15; }
+    .val-pos { color: var(--color-compra) !important; }
+    .val-neg { color: var(--color-venda) !important; }
+    .val-neu { color: var(--dash-text); }
+
+    /* ─── CHARTS ROW ─── */
+    .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+
+    @media (max-width: 900px) {
+        .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+        .charts-row { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 550px) {
+        .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>
-        <i class="fas fa-layer-group me-2"></i> {{ estrutura.nome }}
-        {% if estrutura.slug == 'sem-estrutura' %}
-        <span class="badge bg-secondary fs-6 align-middle ms-2">Padrão</span>
-        {% endif %}
-        <span
-            class="badge {% if estrutura.status == 'ABERTA' %}bg-success{% else %}bg-danger{% endif %} fs-6 align-middle ms-2">
-            {{ estrutura.get_status_display }}
-        </span>
-    </h2>
-    <div>
-        <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left me-1"></i> Voltar
-        </a>
 
+{# ─── HEADER ─── #}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <a href="{% url 'trading:dashboard_estruturas' %}" style="color:var(--dash-muted); font-size:.85rem; text-decoration:none;">
+                <i class="fas fa-layer-group me-1"></i>Estruturas
+            </a>
+            <span style="color:var(--dash-muted);">/</span>
+            <h4 class="mb-0 fw-bold" style="color:var(--dash-text);">{{ estrutura.nome }}</h4>
+            {% if estrutura.slug == 'sem-estrutura' %}
+            <span class="badge bg-secondary">Padrão</span>
+            {% endif %}
+            <span class="badge {% if estrutura.status == 'ABERTA' %}bg-success{% else %}bg-secondary{% endif %}">
+                {{ estrutura.get_status_display }}
+            </span>
+        </div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
         <form action="{% url 'trading:alternar_status_estrutura' slug=estrutura.slug %}" method="post" class="d-inline">
             {% csrf_token %}
             {% if estrutura.status == 'ABERTA' %}
-            <button type="submit" class="btn btn-outline-warning" {% if has_open_positions %}disabled
-                title="Feche todas as posições antes de encerrar a estrutura" {% endif %}>
-                <i class="fas fa-archive me-1"></i> Fechar Estrutura
+            <button type="submit" class="btn btn-outline-warning btn-sm"
+                {% if has_open_positions %}disabled title="Feche todas as posições antes de encerrar"{% endif %}>
+                <i class="fas fa-archive me-1"></i>Fechar
             </button>
             {% else %}
-            <button type="submit" class="btn btn-outline-success">
-                <i class="fas fa-unlock me-1"></i> Reabrir Estrutura
+            <button type="submit" class="btn btn-outline-success btn-sm">
+                <i class="fas fa-unlock me-1"></i>Reabrir
             </button>
             {% endif %}
         </form>
-
-        <a href="{% url 'trading:adicionar_ordem_manual' slug=estrutura.slug %}" class="btn btn-primary">
-            <i class="fas fa-plus me-1"></i> Nova Ordem
+        <a href="{% url 'trading:adicionar_ordem_manual' slug=estrutura.slug %}" class="btn btn-primary btn-sm">
+            <i class="fas fa-plus me-1"></i>Nova Ordem
         </a>
     </div>
 </div>
 
-<!-- Header Stats -->
-<div class="row mb-4 g-2">
-    <div class="col-md-4 col-lg-2">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body px-2 py-3 text-center">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Aberto</h6>
-                <h5 class="mb-0 {% if estrutura.pl_aberto > 0 %}color-compra{% elif estrutura.pl_aberto < 0 %}color-venda{% endif %}" style="font-size: 1.1rem;">
-                    R$ {{ estrutura.pl_aberto|floatformat:2|intcomma }}
-                </h5>
-            </div>
+{# ─── KPI STRIP ─── #}
+<div class="kpi-strip">
+    <div class="kpi-card a1">
+        <i class="fas fa-wallet kpi-icon"></i>
+        <div class="kpi-label">P&amp;L Aberto</div>
+        <div class="kpi-value {% if estrutura.pl_aberto > 0 %}val-pos{% elif estrutura.pl_aberto < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ estrutura.pl_aberto|floatformat:2|intcomma }}
         </div>
     </div>
-    <div class="col-md-4 col-lg-2">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body px-2 py-3 text-center">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Realizado</h6>
-                <h5 class="mb-0 {% if estrutura.pl_realizado > 0 %}color-compra{% elif estrutura.pl_realizado < 0 %}color-venda{% endif %}" style="font-size: 1.1rem;">
-                    R$ {{ estrutura.pl_realizado|floatformat:2|intcomma }}
-                </h5>
-            </div>
+    <div class="kpi-card a2">
+        <i class="fas fa-coins kpi-icon"></i>
+        <div class="kpi-label">P&amp;L Realizado</div>
+        <div class="kpi-value {% if estrutura.pl_realizado > 0 %}val-pos{% elif estrutura.pl_realizado < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ estrutura.pl_realizado|floatformat:2|intcomma }}
         </div>
     </div>
-    <div class="col-md-4 col-lg-2">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body px-2 py-3 text-center">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">PL Total</h6>
-                <h5 class="mb-0 {% if estrutura.valor_total > 0 %}color-compra{% elif estrutura.valor_total < 0 %}color-venda{% endif %}" style="font-size: 1.1rem;">
-                    R$ {{ estrutura.valor_total|floatformat:2|intcomma }}
-                </h5>
-            </div>
+    <div class="kpi-card a3">
+        <i class="fas fa-chart-line kpi-icon"></i>
+        <div class="kpi-label">P&amp;L Total</div>
+        <div class="kpi-value {% if estrutura.valor_total > 0 %}val-pos{% elif estrutura.valor_total < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ estrutura.valor_total|floatformat:2|intcomma }}
         </div>
     </div>
-    <div class="col-md-4 col-lg-2">
-        <div class="card shadow-sm border-0 h-100 border-start border-info border-4">
-            <div class="card-body px-2 py-3 text-center">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">Exposição</h6>
-                <h5 class="mb-0 {% if estrutura.exposicao_atual > 0 %}color-compra{% elif estrutura.exposicao_atual < 0 %}color-venda{% else %}text-info{% endif %}" style="font-size: 1.1rem;">
-                    R$ {{ estrutura.exposicao_atual|floatformat:2|intcomma }}
-                </h5>
-            </div>
+    <div class="kpi-card a4">
+        <i class="fas fa-balance-scale kpi-icon"></i>
+        <div class="kpi-label">Exposição Líquida</div>
+        <div class="kpi-value {% if estrutura.exposicao_atual > 0 %}val-pos{% elif estrutura.exposicao_atual < 0 %}val-neg{% else %}val-neu{% endif %}">
+            R$ {{ estrutura.exposicao_atual|floatformat:2|intcomma }}
+        </div>
+        <div style="font-size: .75rem; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
+            <span class="val-pos" title="Exposição Comprada"><i class="fas fa-long-arrow-alt-up"></i> {{ exposicao_comprada|floatformat:2|intcomma }}</span>
+            <span style="color:var(--dash-muted); margin:0 4px;">|</span>
+            <span class="val-neg" title="Exposição Vendida"><i class="fas fa-long-arrow-alt-down"></i> {{ exposicao_vendida|floatformat:2|intcomma }}</span>
         </div>
     </div>
-    <div class="col-md-4 col-lg-2">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body px-2 py-3 text-center">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">Início / Fim</h6>
-                <h5 class="mb-0" style="font-size: 0.9rem;">
-                    {% if estrutura.data_inicial %}{{ estrutura.data_inicial|date:"d/m/y" }}{% else %}-{% endif %} /
-                    {% if estrutura.data_final %}{{ estrutura.data_final|date:"d/m/y" }}{% else %}-{% endif %}
-                </h5>
-            </div>
+    <div class="kpi-card a5">
+        <i class="fas fa-calendar-alt kpi-icon"></i>
+        <div class="kpi-label">Período</div>
+        <div class="kpi-value val-neu" style="font-size:1rem;">
+            {% if estrutura.data_inicial %}{{ estrutura.data_inicial|date:"d/m/y" }}{% else %}–{% endif %}
+            → {% if estrutura.data_final %}{{ estrutura.data_final|date:"d/m/y" }}{% else %}–{% endif %}
         </div>
     </div>
-    <div class="col-md-4 col-lg-2">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body px-2 py-3 text-center">
-                <h6 class="text-muted text-uppercase mb-1" style="font-size: 0.65rem;">Duração</h6>
-                <h5 class="mb-0" style="font-size: 1.1rem;">{{ estrutura.dias_estrutura }} dias</h5>
+    <div class="kpi-card a6">
+        <i class="fas fa-clock kpi-icon"></i>
+        <div class="kpi-label">Duração</div>
+        <div class="kpi-value val-neu">{{ estrutura.dias_estrutura }} dias</div>
+    </div>
+</div>
+
+{# ─── CHARTS ROW ─── #}
+<div class="charts-row">
+    <div class="mod-card">
+        <div class="mod-header">
+            <div class="mod-title">
+                <i class="fas fa-chart-line" style="color:var(--dash-accent);"></i>
+                Evolução Diária (Equity)
             </div>
+        </div>
+        <div style="padding:16px;">
+            <div id="chart-estrutura" style="width:100%; height:220px;"></div>
+        </div>
+    </div>
+    <div class="mod-card">
+        <div class="mod-header">
+            <div class="mod-title">
+                <i class="fas fa-chart-bar" style="color:var(--dash-accent2);"></i>
+                Exposição Diária
+            </div>
+        </div>
+        <div style="padding:16px;">
+            <div id="chart-exposicao" style="width:100%; height:220px;"></div>
         </div>
     </div>
 </div>
 
-<!-- Gráficos de Evolução -->
-<div class="row mb-4">
-    <div class="col-md-6">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header pt-3 pb-2">
-                <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i> Evolução Diária (Equity)</h5>
-            </div>
-            <div class="card-body">
-                <div id="chart-estrutura" style="width: 100%; height: 250px;"></div>
-            </div>
+{# ─── POSIÇÕES ABERTAS ─── #}
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-folder-open" style="color:var(--color-compra);"></i>
+            Posições Abertas
+            <span class="badge ms-2" style="background:rgba(16,185,129,.12); color:var(--color-compra); border:1px solid rgba(16,185,129,.25); border-radius:20px; font-size:.7rem; padding:3px 10px;">
+                {{ posicoes_abertas|length }}
+            </span>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header pt-3 pb-2">
-                <h5 class="card-title mb-0"><i class="fas fa-chart-bar me-2"></i> Exposição Diária</h5>
-            </div>
-            <div class="card-body">
-                <div id="chart-exposicao" style="width: 100%; height: 250px;"></div>
-            </div>
-        </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Ativo</th>
+                    <th>Tipo</th>
+                    <th class="text-end">Strike</th>
+                    <th class="text-center">Vencimento</th>
+                    <th class="text-end">Qtd</th>
+                    <th class="text-end">Preço Médio</th>
+                    <th class="text-end">Último Preço</th>
+                    <th class="text-end">Data Últ.</th>
+                    <th class="text-end">PL Realizado</th>
+                    <th class="text-end">PL Aberto</th>
+                    <th class="text-end">PL Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pos in posicoes_abertas %}
+                <tr>
+                    <td class="fw-bold">{{ pos.ativo.ticker }}</td>
+                    <td>
+                        <span class="{% if pos.ativo.tipo_display == 'CALL' %}badge-call{% elif pos.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %}">
+                            {{ pos.ativo.tipo_display }}
+                        </span>
+                    </td>
+                    <td class="text-end">{{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}</td>
+                    <td class="text-center text-muted" style="font-size:.85rem;">
+                        {% if pos.ativo.data_expiracao %}{{ pos.ativo.data_expiracao|date:"d/m/y" }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end">
+                        <span class="{% if pos.quantidade_atual > 0 %}badge-compra{% elif pos.quantidade_atual < 0 %}badge-venda{% else %}badge bg-secondary{% endif %}">
+                            {{ pos.quantidade_atual }}
+                        </span>
+                    </td>
+                    <td class="text-end">{{ pos.preco_medio|floatformat:2|intcomma }}</td>
+                    <td class="text-end">{{ pos.ultimo_preco|floatformat:2|intcomma }}</td>
+                    <td class="text-end text-muted">
+                        {% if pos.data_ultimo_preco %}{{ pos.data_ultimo_preco|date:"d/m/y" }}{% endif %}
+                    </td>
+                    <td class="text-end {% if pos.pl_realizado_acumulado > 0 %}val-pos{% elif pos.pl_realizado_acumulado < 0 %}val-neg{% endif %}">
+                        {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-end {% if pos.pl_aberto_calc > 0 %}val-pos{% elif pos.pl_aberto_calc < 0 %}val-neg{% endif %}">
+                        {{ pos.pl_aberto_calc|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-end fw-bold {% if pos.pl_total > 0 %}val-pos{% elif pos.pl_total < 0 %}val-neg{% endif %}">
+                        {{ pos.pl_total|floatformat:2|intcomma }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="11" class="text-center text-muted py-4">Nenhuma posição ativa.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
-<div class="row">
-    <!-- Posições Abertas -->
-    <div class="col-12 mb-4">
-        <div class="card shadow-sm border-0">
-            <div class="card-header pt-3 pb-2">
-                <h5 class="card-title mb-0 text-success"><i class="fas fa-folder-open me-2"></i> Posições Abertas</h5>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover table-striped mb-0 align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Ativo</th>
-                                <th>Tipo</th>
-                                <th class="text-end">Strike</th>
-                                <th class="text-center">Vencimento</th>
-                                <th class="text-end">Qtd</th>
-                                <th class="text-end">Preço Médio</th>
-                                <th class="text-end">Último Preço</th>
-                                <th class="text-end">Data Último</th>
-                                <th class="text-end">PL Realizado</th>
-                                <th class="text-end">PL Aberto</th>
-                                <th class="text-end">PL Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for pos in posicoes_abertas %}
-                            <tr>
-                                <td class="fw-bold">{{ pos.ativo.ticker }}</td>
-                                <td>
-                                    <span class="{% if pos.ativo.tipo_display == 'CALL' %}badge-call{% elif pos.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %}">
-                                        {{ pos.ativo.tipo_display }}
-                                    </span>
-                                </td>
-                                <td class="text-end">{{ pos.ativo.preco_exercicio|floatformat:2|intcomma }}</td>
-                                <td class="text-center text-muted" style="font-size: 0.85rem;">
-                                    {% if pos.ativo.data_expiracao %}{{ pos.ativo.data_expiracao|date:"d/m/y" }}{% else %}-{% endif %}
-                                </td>
-                                <td class="text-end">
-                                    <span class="{% if pos.quantidade_atual > 0 %}badge-compra{% elif pos.quantidade_atual < 0 %}badge-venda{% else %}badge bg-secondary{% endif %}">
-                                        {{ pos.quantidade_atual }}
-                                    </span>
-                                </td>
-                                <td class="text-end">{{ pos.preco_medio|floatformat:2|intcomma }}</td>
-                                <td class="text-end">{{ pos.ultimo_preco|floatformat:2|intcomma }}</td>
-                                <td class="text-end text-muted">
-                                    {% if pos.data_ultimo_preco %}
-                                    {{ pos.data_ultimo_preco|date:"d/m/y" }}
-                                    {% endif %}</td>
-                                <td
-                                    class="text-end {% if pos.pl_realizado_acumulado > 0 %}color-compra{% elif pos.pl_realizado_acumulado < 0 %}color-venda{% endif %}">
-                                    {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
-                                </td>
-                                <td
-                                    class="text-end {% if pos.pl_aberto_calc > 0 %}color-compra{% elif pos.pl_aberto_calc < 0 %}color-venda{% endif %}">
-                                    {{ pos.pl_aberto_calc|floatformat:2|intcomma }}
-                                </td>
-                                <td
-                                    class="text-end fw-bold {% if pos.pl_total > 0 %}color-compra{% elif pos.pl_total < 0 %}color-venda{% endif %}">
-                                    {{ pos.pl_total|floatformat:2|intcomma }}
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="11" class="text-center text-muted py-4">Nenhuma posição ativa.</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+{# ─── SPREADS MONITORADOS ─── #}
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-exchange-alt" style="color:var(--dash-accent);"></i>
+            Spreads Monitorados
+            <span class="badge ms-2" style="background:rgba(108,99,255,.12); color:var(--dash-accent); border:1px solid rgba(108,99,255,.25); border-radius:20px; font-size:.7rem; padding:3px 10px;">
+                {{ spreads_vinculados|length }}
+            </span>
         </div>
+        <a href="{% url 'trading:criar_rolagem' %}?estrutura_id={{ estrutura.id }}" class="btn btn-sm btn-outline-primary">
+            <i class="fas fa-plus me-1"></i>Novo Spread
+        </a>
     </div>
-
-    <!-- Posições Fechadas -->
-    <div class="col-12 mb-4">
-        <div class="card shadow-sm border-0">
-            <div class="card-header pt-3 pb-2">
-                <h5 class="card-title mb-0 text-muted"><i class="fas fa-folder me-2"></i> Posições Finalizadas</h5>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover table-striped mb-0 align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Ativo</th>
-                                <th>Tipo</th>
-                                <th class="text-end">Preço Médio</th>
-                                <th class="text-end">PL Realizado</th>
-                                <th class="text-center">Início</th>
-                                <th class="text-center">Término</th>
-                                <th class="text-center">Duração</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for pos in posicoes_fechadas %}
-                            <tr>
-                                <td class="fw-bold">{{ pos.ativo.ticker }}</td>
-                                <td>
-                                    <span class="{% if pos.ativo.tipo_display == 'CALL' %}badge-call{% elif pos.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %}">
-                                        {{ pos.ativo.tipo_display }}
-                                    </span>
-                                </td>
-                                <td class="text-end">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
-                                <td
-                                    class="text-end fw-bold {% if pos.pl_realizado_acumulado > 0 %}color-compra{% elif pos.pl_realizado_acumulado < 0 %}color-venda{% endif %}">
-                                    R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
-                                </td>
-                                <td class="text-center text-muted">{{ pos.data_inicial|date:"d/m/Y" }}</td>
-                                <td class="text-center text-muted">{{ pos.data_final|date:"d/m/Y" }}</td>
-                                <td class="text-center">{{ pos.dias }} dias</td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="7" class="text-center text-muted py-4">Nenhuma posição finalizada.</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Tabela de Ordens -->
-<div class="card shadow-sm border-0 mb-5">
-    <div class="card-header pt-3 pb-2 d-flex justify-content-between align-items-center">
-        <h5 class="card-title mb-0"><i class="fas fa-list me-2"></i> Histórico de Ordens</h5>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>Data</th>
-                        <th>Ativo</th>
-                        <th>Tipo</th>
-                        <th class="text-end">Strike</th>
-                        <th class="text-center">Vencimento</th>
-                        <th class="text-center">Operação</th>
-                        <th class="text-end">Qtd</th>
-                        <th class="text-end">Preço</th>
-                        <th class="text-end">Total</th>
-                        <th class="text-center">Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for ordem in page_obj %}
-                    <tr>
-                        <td>{{ ordem.data|date:"d/m/Y" }}</td>
-                        <td class="fw-bold">{{ ordem.ativo.ticker }}</td>
-                        <td>
-                            <span class="{% if ordem.ativo.tipo_display == 'CALL' %}badge-call{% elif ordem.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %} badge-sm">
-                                {{ ordem.ativo.tipo_display }}
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Nome do Spread</th>
+                    <th>Ativos</th>
+                    <th class="text-center">Status</th>
+                    <th class="text-end">Spread Médio 5d</th>
+                    <th class="text-end">Spread Atual</th>
+                    <th class="text-center">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for spread in spreads_vinculados %}
+                <tr>
+                    <td class="fw-bold">
+                        <a href="{% url 'trading:detalhe_rolagem' spread.slug %}" class="text-decoration-none">
+                            {{ spread.nome }}
+                        </a>
+                    </td>
+                    <td class="text-muted" style="font-size:.85rem;">
+                        {% for leg in spread.legs.all %}
+                            <span class="badge bg-secondary me-1">
+                                {% if leg.quantidade > 0 %}+{% else %}-{% endif %}{{ leg.ativo.ticker }}
                             </span>
-                        </td>
-                        <td class="text-end">
-                            {% if ordem.ativo.preco_exercicio %}
-                            {{ ordem.ativo.preco_exercicio|floatformat:2|intcomma}}
-                            {% else %}-{% endif %}
-                        </td>
-                        <td class="text-center">
-                            {% if ordem.ativo.data_expiracao %}
-                            {{ ordem.ativo.data_expiracao|date:"d/m/Y" }}
-                            {% else %}-{% endif %}
-                        </td>
-                        <td class="text-center">
-                            {% if ordem.quantidade > 0 %}
-                            <span class="badge-compra px-2 py-1">COMPRA</span>
-                            {% else %}
-                            <span class="badge-venda px-2 py-1">VENDA</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-end">{{ ordem.quantidade|stringformat:"i"|cut:"-" }}</td>
-                        <td class="text-end">{{ ordem.preco|floatformat:2|intcomma }}</td>
-                        <td class="text-end text-muted">{{ ordem.total_valor|floatformat:2|intcomma }}</td>
-                        <td class="text-center">
-                            <form method="post" action="{% url 'trading:excluir_ordem' ordem.id %}" class="d-inline"
-                                onsubmit="return confirm('Tem certeza que deseja excluir esta ordem? O recálculo será feito automaticamente.');">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir"><i
-                                        class="fas fa-trash-alt"></i></button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="10" class="text-center text-muted py-4">Nenhuma ordem registrada.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                        {% endfor %}
+                    </td>
+                    <td class="text-center">
+                        {% if spread.status == 'ATIVA' %}
+                            <span class="badge bg-success">Ativa</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Arquivada</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end fw-bold {% if spread.spread_medio_5d is not None %}{% if spread.spread_medio_5d > 0 %}val-pos{% elif spread.spread_medio_5d < 0 %}val-neg{% endif %}{% endif %}">
+                        {% if spread.spread_medio_5d is not None %}R$ {{ spread.spread_medio_5d|floatformat:2|intcomma }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end fw-bold {% if spread.spread_atual is not None %}{% if spread.spread_atual > 0 %}val-pos{% elif spread.spread_atual < 0 %}val-neg{% endif %}{% endif %}">
+                        {% if spread.spread_atual is not None %}R$ {{ spread.spread_atual|floatformat:2|intcomma }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-center">
+                        <a href="{% url 'trading:detalhe_rolagem' spread.slug %}" class="btn btn-sm btn-outline-secondary me-1" title="Ver Detalhe">
+                            <i class="fas fa-eye"></i>
+                        </a>
+                        <a href="{% url 'trading:editar_rolagem' spread.slug %}?origem=estrutura" class="btn btn-sm btn-outline-warning" title="Editar">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        Nenhum spread vinculado.
+                        <a href="{% url 'trading:criar_rolagem' %}?estrutura_id={{ estrutura.id }}" style="color:var(--dash-accent); display:block; font-size:.85rem; margin-top:4px;">+ Monitorar um spread</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{# ─── POSIÇÕES FECHADAS ─── #}
+<div class="mod-card mb-4">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-folder" style="color:var(--dash-muted);"></i>
+            Posições Finalizadas
         </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Ativo</th>
+                    <th>Tipo</th>
+                    <th class="text-end">Preço Médio</th>
+                    <th class="text-end">PL Realizado</th>
+                    <th class="text-center">Início</th>
+                    <th class="text-center">Término</th>
+                    <th class="text-center">Duração</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pos in posicoes_fechadas %}
+                <tr>
+                    <td class="fw-bold text-muted">{{ pos.ativo.ticker }}</td>
+                    <td>
+                        <span class="{% if pos.ativo.tipo_display == 'CALL' %}badge-call{% elif pos.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %}" style="opacity:.7;">
+                            {{ pos.ativo.tipo_display }}
+                        </span>
+                    </td>
+                    <td class="text-end text-muted">R$ {{ pos.preco_medio|floatformat:2|intcomma }}</td>
+                    <td class="text-end fw-bold {% if pos.pl_realizado_acumulado > 0 %}val-pos{% elif pos.pl_realizado_acumulado < 0 %}val-neg{% endif %}">
+                        R$ {{ pos.pl_realizado_acumulado|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-center text-muted">{{ pos.data_inicial|date:"d/m/Y" }}</td>
+                    <td class="text-center text-muted">{{ pos.data_final|date:"d/m/Y" }}</td>
+                    <td class="text-center">{{ pos.dias }} dias</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-4">Nenhuma posição finalizada.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{# ─── HISTÓRICO DE ORDENS ─── #}
+<div class="mod-card mb-5">
+    <div class="mod-header">
+        <div class="mod-title">
+            <i class="fas fa-list" style="color:var(--dash-muted);"></i>
+            Histórico de Ordens
+        </div>
+        <a href="{% url 'trading:adicionar_ordem_manual' slug=estrutura.slug %}" class="btn btn-sm btn-outline-primary">
+            <i class="fas fa-plus me-1"></i>Nova Ordem
+        </a>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Ativo</th>
+                    <th>Tipo</th>
+                    <th class="text-end">Strike</th>
+                    <th class="text-center">Vencimento</th>
+                    <th class="text-center">Operação</th>
+                    <th class="text-end">Qtd</th>
+                    <th class="text-end">Preço</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-center">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ordem in page_obj %}
+                <tr>
+                    <td>{{ ordem.data|date:"d/m/Y" }}</td>
+                    <td class="fw-bold">{{ ordem.ativo.ticker }}</td>
+                    <td>
+                        <span class="{% if ordem.ativo.tipo_display == 'CALL' %}badge-call{% elif ordem.ativo.tipo_display == 'PUT' %}badge-put{% else %}badge-ativo{% endif %} badge-sm">
+                            {{ ordem.ativo.tipo_display }}
+                        </span>
+                    </td>
+                    <td class="text-end">
+                        {% if ordem.ativo.preco_exercicio %}{{ ordem.ativo.preco_exercicio|floatformat:2|intcomma }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if ordem.ativo.data_expiracao %}{{ ordem.ativo.data_expiracao|date:"d/m/Y" }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if ordem.quantidade > 0 %}
+                        <span class="badge-compra px-2 py-1">COMPRA</span>
+                        {% else %}
+                        <span class="badge-venda px-2 py-1">VENDA</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">{{ ordem.quantidade|stringformat:"i"|cut:"-" }}</td>
+                    <td class="text-end">{{ ordem.preco|floatformat:2|intcomma }}</td>
+                    <td class="text-end text-muted">{{ ordem.total_valor|floatformat:2|intcomma }}</td>
+                    <td class="text-center">
+                        <a href="{% url 'trading:editar_ordem' ordem.id %}" class="btn btn-sm btn-outline-warning me-1" title="Editar ordem">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                        <form method="post" action="{% url 'trading:excluir_ordem' ordem.id %}" class="d-inline"
+                            onsubmit="return confirm('Tem certeza que deseja excluir esta ordem?');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="10" class="text-center text-muted py-4">Nenhuma ordem registrada.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
     {% if page_obj.has_other_pages %}
-    <div class="card-footer border-top-0 py-3">
-        <nav aria-label="Navegação de ordens">
+    <div class="p-3">
+        <nav>
             <ul class="pagination pagination-sm justify-content-center mb-0">
                 {% if page_obj.has_previous %}
-                <li class="page-item"><a class="page-link" href="?page=1">&laquo; Primeira</a></li>
-                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Anterior</a>
-                </li>
+                <li class="page-item"><a class="page-link" href="?page=1">« Primeira</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Anterior</a></li>
                 {% endif %}
-
                 <li class="page-item active">
-                    <span class="page-link">
-                        Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
-                    </span>
+                    <span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
                 </li>
-
                 {% if page_obj.has_next %}
                 <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Próxima</a></li>
-                <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Última
-                        &raquo;</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Última »</a></li>
                 {% endif %}
             </ul>
         </nav>
@@ -352,97 +455,87 @@
 {% endblock %}
 
 {% block extra_js %}
-<!-- ECharts -->
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        var chartDom = document.getElementById('chart-estrutura');
+document.addEventListener("DOMContentLoaded", function () {
+    const rawDatas     = '{{ datas_chart|escapejs }}';
+    const rawValores   = '{{ valores_chart|escapejs }}';
+    const rawExposicao = '{{ exposicao_chart|escapejs }}';
 
-        // Parse explicit string array to prevent JS execution errors
-        const rawDatas = '{{ datas_chart|escapejs }}';
-        const rawValores = '{{ valores_chart|escapejs }}';
+    let datas = [], valores = [], valoresExp = [];
+    try {
+        datas     = JSON.parse(rawDatas);
+        valores   = JSON.parse(rawValores);
+        valoresExp = JSON.parse(rawExposicao);
+    } catch(e) { console.error(e); }
 
-        let datas = [];
-        let valores = [];
+    const colPos   = getComputedStyle(document.documentElement).getPropertyValue('--color-compra').trim()  || '#10b981';
+    const colNeg   = getComputedStyle(document.documentElement).getPropertyValue('--color-venda').trim()   || '#ef4444';
+    const colAcc   = getComputedStyle(document.documentElement).getPropertyValue('--dash-accent').trim()   || '#6c63ff';
+    const colAcc2  = getComputedStyle(document.documentElement).getPropertyValue('--dash-accent2').trim()  || '#00d4aa';
+    const colMuted = getComputedStyle(document.documentElement).getPropertyValue('--dash-muted').trim()    || '#8892a4';
 
-        try {
-            datas = JSON.parse(rawDatas);
-            valores = JSON.parse(rawValores);
-        } catch (e) {
-            console.error("Erro ao fazer parse dos dados do gráfico", e);
-        }
-
-        if (datas.length === 0) {
-            chartDom.innerHTML = '<div class="d-flex h-100 justify-content-center align-items-center text-muted">Sem dados suficientes para o gráfico</div>';
-            return;
-        }
-
-        // Equity Chart
-        var chartEquity = echarts.init(document.getElementById('chart-estrutura'), 'dark');
-        const colPos = getComputedStyle(document.documentElement).getPropertyValue('--color-compra').trim() || '#10b981';
-        const colNeg = getComputedStyle(document.documentElement).getPropertyValue('--color-venda').trim() || '#ef4444';
-        const colAtivo = getComputedStyle(document.documentElement).getPropertyValue('--color-ativo').trim() || '#6c63ff';
-
-        var optionEquity = {
-            backgroundColor: 'transparent',
-            tooltip: { trigger: 'axis' },
-            grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-            xAxis: { type: 'category', boundaryGap: false, data: datas },
-            yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
-            series: [{
-                name: 'Patrimônio',
-                type: 'line',
-                smooth: true,
-                lineStyle: { width: 3, color: colPos },
-                itemStyle: { color: colPos },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: colPos + '66' },
-                        { offset: 1, color: colPos + '00' }
-                    ])
-                },
-                data: valores
-            }]
-        };
-        chartEquity.setOption(optionEquity);
-
-        // Exposure Chart
-        const rawExposicao = '{{ exposicao_chart|escapejs }}';
-        let valoresExposicao = [];
-        try {
-            valoresExposicao = JSON.parse(rawExposicao);
-        } catch (e) { console.error(e); }
-
-        var chartExposicao = echarts.init(document.getElementById('chart-exposicao'), 'dark');
-        var optionExposicao = {
-            backgroundColor: 'transparent',
-            tooltip: { trigger: 'axis' },
-            grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-            xAxis: { type: 'category', boundaryGap: false, data: datas },
-            yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
-            series: [{
-                name: 'Exposição',
-                type: 'line',
-                smooth: true,
-                lineStyle: { width: 3, color: colAtivo },
-                itemStyle: { color: colAtivo },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: colAtivo + '66' },
-                        { offset: 1, color: colAtivo + '00' }
-                    ])
-                },
-                data: valoresExposicao
-            }]
-        };
-        chartExposicao.setOption(optionExposicao);
-
-        window.addEventListener('resize', function () { 
-            chartEquity.resize(); 
-            chartExposicao.resize();
-        });
+    const baseOpts = (color) => ({
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: '#1a1d27',
+            borderColor: 'rgba(255,255,255,.1)',
+            textStyle: { color: '#e2e8f0' },
+            formatter: p => {
+                let v = p[0].value;
+                let s = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v);
+                return `${p[0].axisValue}<br/>${p[0].marker} <b>${s}</b>`;
+            }
+        },
+        grid: { left:'3%', right:'4%', bottom:'3%', containLabel:true },
+        xAxis: {
+            type:'category', boundaryGap:false, data: datas,
+            axisLabel:{ color:colMuted, fontSize:9 },
+            axisLine:{ lineStyle:{ color:'rgba(255,255,255,.08)' } }
+        },
+        yAxis: {
+            type:'value', scale:true,
+            axisLabel:{ color:colMuted, fontSize:9, formatter: v => 'R$'+v.toLocaleString('pt-BR') },
+            splitLine:{ lineStyle:{ color:'rgba(255,255,255,.05)' } }
+        },
+        series:[{
+            type:'line', smooth:true,
+            lineStyle:{ color:color, width:3 },
+            itemStyle:{ color:color },
+            areaStyle:{
+                color: new echarts.graphic.LinearGradient(0,0,0,1,[
+                    {offset:0, color:color+'55'},
+                    {offset:1, color:color+'00'}
+                ])
+            },
+            data: null // set below
+        }]
     });
-</script>
 
+    // Equity chart
+    if (datas.length > 0) {
+        const chartEq = echarts.init(document.getElementById('chart-estrutura'), 'dark');
+        const lastVal = valores[valores.length-1] || 0;
+        const optEq = baseOpts(lastVal >= 0 ? colPos : colNeg);
+        optEq.series[0].name = 'Patrimônio';
+        optEq.series[0].data = valores;
+        chartEq.setOption(optEq);
+        window.addEventListener('resize', () => chartEq.resize());
+    } else {
+        document.getElementById('chart-estrutura').innerHTML =
+            '<div class="d-flex h-100 justify-content-center align-items-center" style="color:var(--dash-muted);">Sem dados</div>';
+    }
+
+    // Exposure chart
+    if (datas.length > 0) {
+        const chartEx = echarts.init(document.getElementById('chart-exposicao'), 'dark');
+        const optEx = baseOpts(colAcc2);
+        optEx.series[0].name = 'Exposição';
+        optEx.series[0].data = valoresExp;
+        chartEx.setOption(optEx);
+        window.addEventListener('resize', () => chartEx.resize());
+    }
+});
+</script>
 {% endblock %}

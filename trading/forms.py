@@ -4,11 +4,22 @@ from .models import Estrutura, Ordem, Rolagem, RolagemLeg
 class RolagemForm(forms.ModelForm):
     class Meta:
         model = Rolagem
-        fields = ['nome', 'filtro_liquidez']
+        fields = ['nome', 'filtro_liquidez', 'estrutura']
         widgets = {
             'nome': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ex: Spread PETR4 Call Jun/Jul'}),
             'filtro_liquidez': forms.NumberInput(attrs={'class': 'form-control'}),
+            'estrutura': forms.Select(attrs={'class': 'form-select'}),
         }
+        
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+        if user:
+            from django.db.models import Q
+            qs = Estrutura.objects.filter(usuario=user, status='ABERTA')
+            if self.instance and getattr(self.instance, 'estrutura_id', None):
+                qs = qs | Estrutura.objects.filter(id=self.instance.estrutura_id)
+            self.fields['estrutura'].queryset = qs.distinct()
 
 class RolagemLegForm(forms.ModelForm):
     ticker = forms.CharField(

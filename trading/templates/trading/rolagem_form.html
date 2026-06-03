@@ -14,7 +14,7 @@
                     {% csrf_token %}
                     
                     <div class="row mb-4">
-                        <div class="col-md-8">
+                        <div class="col-md-5">
                             <label class="form-label fw-bold">Nome / Identificador</label>
                             {{ form.nome }}
                             {% if form.nome.errors %}
@@ -22,7 +22,14 @@
                             {% endif %}
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-bold">Filtro de Liquidez (Contratos)</label>
+                            <label class="form-label fw-bold">Estrutura (Opcional)</label>
+                            {{ form.estrutura }}
+                            {% if form.estrutura.errors %}
+                                <div class="text-danger small">{{ form.estrutura.errors }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Filtro Liq. (Qtd)</label>
                             {{ form.filtro_liquidez }}
                             {% if form.filtro_liquidez.errors %}
                                 <div class="text-danger small">{{ form.filtro_liquidez.errors }}</div>

@@ -25,10 +25,14 @@ urlpatterns = [
     path('alocar-orfas/', views.alocar_ordens_orfas, name='alocar_orfas'),
     
     # Ações em Ordens
+    path('ordens/<int:ordem_id>/editar/', views.editar_ordem, name='editar_ordem'),
     path('ordens/<int:ordem_id>/excluir/', views.excluir_ordem, name='excluir_ordem'),
 
     # Relatórios
     path('relatorios/', views.relatorio_performance, name='relatorio_performance'),
+
+    # Posições
+    path('posicoes/', views.posicoes_view, name='posicoes'),
 
     # Spreads
     path('spreads/', views.lista_rolagens, name='lista_rolagens'),
