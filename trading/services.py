@@ -549,6 +549,176 @@ def recalcular_rolagem(rolagem):
         rolagem.spread_medio_5d = None
         rolagem.save(update_fields=['spread_atual', 'spread_medio_5d'])
 
+def exportar_estruturas_json(estrutura_ids, usuario):
+    """
+    Exporta as estruturas selecionadas (pelo id) do usuário como um dicionário serializável em JSON.
+    Inclui: metadados da estrutura, todas as ordens, posições consolidadas e snapshots diários.
+    """
+    from decimal import Decimal
+
+    estruturas = Estrutura.objects.filter(id__in=estrutura_ids, usuario=usuario).prefetch_related(
+        'ordens__ativo', 'posicoes__ativo', 'historico_snapshots'
+    )
+
+    payload = {
+        'versao': '1.0',
+        'exportado_em': datetime.now().isoformat(),
+        'usuario': usuario.username,
+        'estruturas': []
+    }
+
+    for est in estruturas:
+        ordens_data = []
+        for o in est.ordens.all().order_by('data', 'criado_em'):
+            ordens_data.append({
+                'ativo_ticker': o.ativo.ticker,
+                'quantidade': o.quantidade,
+                'preco': str(o.preco),
+                'data': o.data.isoformat(),
+            })
+
+        posicoes_data = []
+        for p in est.posicoes.all():
+            posicoes_data.append({
+                'ativo_ticker': p.ativo.ticker,
+                'quantidade_atual': p.quantidade_atual,
+                'preco_medio': str(p.preco_medio),
+                'pl_realizado_acumulado': str(p.pl_realizado_acumulado),
+            })
+
+        snapshots_data = []
+        for s in est.historico_snapshots.order_by('data'):
+            snapshots_data.append({
+                'data': s.data.isoformat(),
+                'pl_realizado': str(s.pl_realizado),
+                'pl_aberto': str(s.pl_aberto),
+                'valor_total': str(s.valor_total),
+                'exposicao_diaria': str(s.exposicao_diaria),
+            })
+
+        payload['estruturas'].append({
+            'nome': est.nome,
+            'status': est.status,
+            'pl_realizado': str(est.pl_realizado),
+            'pl_aberto': str(est.pl_aberto),
+            'valor_total': str(est.valor_total),
+            'exposicao_atual': str(est.exposicao_atual),
+            'data_inicial': est.data_inicial.isoformat() if est.data_inicial else None,
+            'data_final': est.data_final.isoformat() if est.data_final else None,
+            'dias_estrutura': est.dias_estrutura,
+            'criado_em': est.criado_em.isoformat(),
+            'ordens': ordens_data,
+            'posicoes': posicoes_data,
+            'snapshots': snapshots_data,
+        })
+
+    return payload
+
+
+def importar_estruturas_json(payload, usuario, nomes_selecionados=None):
+    """
+    Importa estruturas a partir de um payload JSON previamente exportado.
+    - nomes_selecionados: lista de nomes de estruturas a restaurar. Se None, importa todas.
+    - Estruturas com nome conflitante recebem sufixo com data/hora.
+    - Retorna (qtd_criadas, erros)
+    """
+    from django.utils.text import slugify
+    import uuid
+    from decimal import Decimal, InvalidOperation
+
+    erros = []
+    criadas = 0
+
+    estruturas_payload = payload.get('estruturas', [])
+
+    if nomes_selecionados is not None:
+        estruturas_payload = [e for e in estruturas_payload if e.get('nome') in nomes_selecionados]
+
+    if not estruturas_payload:
+        return 0, ['Nenhuma estrutura selecionada para restaurar.']
+
+    for est_data in estruturas_payload:
+        try:
+            nome_base = est_data.get('nome', 'Estrutura Importada')
+
+            # Resolve conflito de nomes
+            nome_final = nome_base
+            if Estrutura.objects.filter(usuario=usuario, nome=nome_base).exists():
+                sufixo = datetime.now().strftime('%d%m%y-%H%M')
+                nome_final = f"{nome_base} ({sufixo})"
+
+            base_slug = slugify(nome_final) or 'estrutura'
+            slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+
+            with transaction.atomic():
+                nova_est = Estrutura.objects.create(
+                    usuario=usuario,
+                    nome=nome_final,
+                    slug=slug,
+                    status=est_data.get('status', 'ABERTA'),
+                    pl_realizado=Decimal(est_data.get('pl_realizado', '0') or '0'),
+                    pl_aberto=Decimal(est_data.get('pl_aberto', '0') or '0'),
+                    valor_total=Decimal(est_data.get('valor_total', '0') or '0'),
+                    exposicao_atual=Decimal(est_data.get('exposicao_atual', '0') or '0'),
+                    data_inicial=est_data.get('data_inicial') or None,
+                    data_final=est_data.get('data_final') or None,
+                    dias_estrutura=est_data.get('dias_estrutura', 0) or 0,
+                )
+
+                # Importa as ordens
+                ordens_para_criar = []
+                for o_data in est_data.get('ordens', []):
+                    ticker = o_data.get('ativo_ticker', '').upper().strip()
+                    ativo = AtivoB3.objects.filter(ticker=ticker).first()
+                    if not ativo:
+                        erros.append(f"[{nome_final}] Ativo '{ticker}' não encontrado. Ordem ignorada.")
+                        continue
+                    try:
+                        ordens_para_criar.append(Ordem(
+                            estrutura=nova_est,
+                            ativo=ativo,
+                            quantidade=int(o_data['quantidade']),
+                            preco=Decimal(str(o_data['preco'])),
+                            data=date.fromisoformat(o_data['data']),
+                        ))
+                    except Exception as e:
+                        erros.append(f"[{nome_final}] Erro ao processar ordem ({ticker}): {e}")
+
+                if ordens_para_criar:
+                    Ordem.objects.bulk_create(ordens_para_criar)
+
+                # Importa snapshots diários (se existirem no backup)
+                snapshots_para_criar = []
+                for s_data in est_data.get('snapshots', []):
+                    try:
+                        snapshots_para_criar.append(DailySnapshot(
+                            estrutura=nova_est,
+                            data=date.fromisoformat(s_data['data']),
+                            pl_realizado=Decimal(str(s_data.get('pl_realizado', '0') or '0')),
+                            pl_aberto=Decimal(str(s_data.get('pl_aberto', '0') or '0')),
+                            valor_total=Decimal(str(s_data.get('valor_total', '0') or '0')),
+                            exposicao_diaria=Decimal(str(s_data.get('exposicao_diaria', '0') or '0')),
+                        ))
+                    except Exception as e:
+                        erros.append(f"[{nome_final}] Erro ao processar snapshot: {e}")
+
+                if snapshots_para_criar:
+                    DailySnapshot.objects.bulk_create(snapshots_para_criar, ignore_conflicts=True)
+
+                # Recalcula posições a partir das ordens restauradas
+                if ordens_para_criar:
+                    ativos_afetados = set(o.ativo for o in ordens_para_criar)
+                    for ativo in ativos_afetados:
+                        recalcular_posicao(nova_est, ativo)
+
+            criadas += 1
+
+        except Exception as e:
+            erros.append(f"Erro ao restaurar estrutura '{est_data.get('nome', '?')}': {e}")
+
+    return criadas, erros
+
+
 def recalcular_todas_rolagens():
     """Recalcula os caches de spread para todas as rolagens cadastradas."""
     from .models import Rolagem

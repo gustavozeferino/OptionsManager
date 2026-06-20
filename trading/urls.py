@@ -42,4 +42,8 @@ urlpatterns = [
     path('spreads/<slug:slug>/editar/', views.editar_rolagem, name='editar_rolagem'),
     path('spreads/<slug:slug>/arquivar/', views.arquivar_rolagem, name='arquivar_rolagem'),
     path('spreads/<slug:slug>/excluir/', views.excluir_rolagem, name='excluir_rolagem'),
+    # Backup e Restauração
+    path('backup/', views.backup_estruturas, name='backup_estruturas'),
+    path('backup/exportar/', views.exportar_backup, name='exportar_backup'),
+    path('backup/restaurar/', views.restaurar_backup, name='restaurar_backup'),
 ]

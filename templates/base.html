@@ -108,6 +108,11 @@
                         </a>
                     </li>
                     <li>
+                        <a href="{% url 'trading:backup_estruturas' %}" class="nav-item {% if 'backup' in request.resolver_match.url_name %}active{% endif %}">
+                            <i class="fas fa-archive"></i><span>Backup</span>
+                        </a>
+                    </li>
+                    <li>
                         <a href="{% url 'trading:posicoes' %}" class="nav-item {% if request.resolver_match.url_name == 'posicoes' %}active{% endif %}">
                             <i class="fas fa-briefcase"></i><span>Posições</span>
                         </a>

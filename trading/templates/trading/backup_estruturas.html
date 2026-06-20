@@ -1,0 +1,574 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Backup de Estruturas — OptionsManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ─── CARDS ─── */
+    .backup-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-bottom: 32px;
+    }
+
+    @media (max-width: 800px) {
+        .backup-grid { grid-template-columns: 1fr; }
+    }
+
+    .backup-section {
+        background: var(--dash-card);
+        border: 1px solid var(--dash-border);
+        border-radius: 18px;
+        overflow: hidden;
+    }
+
+    .backup-section-header {
+        padding: 18px 22px 14px;
+        border-bottom: 1px solid var(--dash-border);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .backup-section-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+    }
+
+    .icon-export { background: rgba(108,99,255,.15); color: #9c8cf8; }
+    .icon-import { background: rgba(16,185,129,.15); color: var(--color-compra); }
+
+    .backup-section-title {
+        font-size: .95rem;
+        font-weight: 700;
+        color: var(--dash-text);
+    }
+
+    .backup-section-sub {
+        font-size: .75rem;
+        color: var(--dash-muted);
+    }
+
+    .backup-section-body {
+        padding: 20px 22px;
+    }
+
+    /* ─── ESTRUTURA CHECKBOXES ─── */
+    .est-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 360px;
+        overflow-y: auto;
+        margin-bottom: 16px;
+        padding-right: 4px;
+    }
+
+    .est-list::-webkit-scrollbar { width: 4px; }
+    .est-list::-webkit-scrollbar-track { background: transparent; }
+    .est-list::-webkit-scrollbar-thumb { background: var(--dash-border); border-radius: 4px; }
+
+    .est-check-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--dash-border);
+        background: rgba(255,255,255,.03);
+        transition: background .15s, border-color .15s;
+        cursor: pointer;
+    }
+
+    .est-check-row:hover {
+        background: rgba(255,255,255,.06);
+        border-color: rgba(108,99,255,.3);
+    }
+
+    .est-check-row input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--dash-accent);
+        flex-shrink: 0;
+        cursor: pointer;
+    }
+
+    .est-check-info { flex: 1; min-width: 0; }
+    .est-check-name {
+        font-size: .88rem;
+        font-weight: 600;
+        color: var(--dash-text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .est-check-meta {
+        font-size: .72rem;
+        color: var(--dash-muted);
+        margin-top: 2px;
+    }
+
+    .val-pos { color: var(--color-compra) !important; }
+    .val-neg { color: var(--color-venda) !important; }
+
+    .est-check-val {
+        font-size: .82rem;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+
+    .select-all-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        font-size: .8rem;
+        color: var(--dash-muted);
+        cursor: pointer;
+    }
+
+    /* ─── DROP ZONE ─── */
+    .drop-zone {
+        border: 2px dashed var(--dash-border);
+        border-radius: 14px;
+        padding: 36px 20px;
+        text-align: center;
+        transition: all .2s;
+        cursor: pointer;
+        position: relative;
+        background: rgba(255,255,255,.02);
+    }
+
+    .drop-zone.dragover {
+        border-color: var(--dash-accent);
+        background: rgba(108,99,255,.08);
+    }
+
+    .drop-zone input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+    }
+
+    .drop-zone-icon {
+        font-size: 2.2rem;
+        color: var(--dash-muted);
+        opacity: .5;
+        margin-bottom: 10px;
+    }
+
+    .drop-zone-text {
+        font-size: .88rem;
+        color: var(--dash-muted);
+        margin-bottom: 4px;
+    }
+
+    .drop-zone-hint {
+        font-size: .73rem;
+        color: var(--dash-muted);
+        opacity: .6;
+    }
+
+    .drop-zone-selected {
+        font-size: .85rem;
+        color: var(--dash-accent);
+        font-weight: 600;
+        margin-top: 8px;
+        display: none;
+    }
+
+    /* ─── PREVIEW PAINEL ─── */
+    #preview-panel {
+        display: none;
+        margin-top: 16px;
+        border: 1px solid var(--dash-border);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .preview-header {
+        padding: 10px 16px;
+        background: rgba(16,185,129,.08);
+        border-bottom: 1px solid var(--dash-border);
+        font-size: .8rem;
+        font-weight: 600;
+        color: var(--color-compra);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .preview-item {
+        padding: 10px 16px;
+        border-bottom: 1px solid rgba(255,255,255,.04);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: .83rem;
+    }
+
+    .preview-item:last-child { border-bottom: none; }
+
+    .preview-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .preview-check input { accent-color: var(--color-compra); }
+
+    /* ─── BOTÕES ─── */
+    .btn-download {
+        width: 100%;
+        padding: 11px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: .88rem;
+        background: linear-gradient(135deg, #6c63ff, #9c8cf8);
+        color: white;
+        border: none;
+        cursor: pointer;
+        transition: opacity .2s, transform .15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .btn-download:hover { opacity: .88; transform: translateY(-1px); }
+    .btn-download:disabled { opacity: .4; cursor: not-allowed; }
+
+    .btn-restore {
+        width: 100%;
+        padding: 11px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: .88rem;
+        background: linear-gradient(135deg, #10b981, #34d399);
+        color: white;
+        border: none;
+        cursor: pointer;
+        transition: opacity .2s, transform .15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .btn-restore:hover { opacity: .88; transform: translateY(-1px); }
+    .btn-restore:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ─── INFO BOX ─── */
+    .info-box {
+        background: rgba(108,99,255,.08);
+        border: 1px solid rgba(108,99,255,.2);
+        border-radius: 10px;
+        padding: 12px 16px;
+        font-size: .78rem;
+        color: var(--dash-muted);
+        margin-bottom: 16px;
+        line-height: 1.6;
+    }
+
+    .info-box i { color: var(--dash-accent); margin-right: 4px; }
+
+    .warn-box {
+        background: rgba(245,158,11,.08);
+        border: 1px solid rgba(245,158,11,.2);
+        border-radius: 10px;
+        padding: 12px 16px;
+        font-size: .78rem;
+        color: var(--dash-muted);
+        margin-top: 14px;
+        line-height: 1.6;
+    }
+
+    .warn-box i { color: #f59e0b; margin-right: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ─── HEADER ─── #}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-0 fw-bold" style="color:var(--dash-text);">
+            <i class="fas fa-archive me-2" style="color:var(--dash-accent);"></i>Backup de Estruturas
+        </h4>
+        <span style="font-size:.78rem; color:var(--dash-muted);">Exporte e restaure estruturas como arquivo JSON</span>
+    </div>
+    <a href="{% url 'trading:dashboard_estruturas' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>Voltar
+    </a>
+</div>
+
+<div class="backup-grid">
+
+    {# ─── EXPORTAR ─── #}
+    <div class="backup-section">
+        <div class="backup-section-header">
+            <div class="backup-section-icon icon-export">
+                <i class="fas fa-file-export"></i>
+            </div>
+            <div>
+                <div class="backup-section-title">Exportar Backup</div>
+                <div class="backup-section-sub">Salvar estruturas como arquivo .json</div>
+            </div>
+        </div>
+        <div class="backup-section-body">
+
+            <div class="info-box">
+                <i class="fas fa-info-circle"></i>
+                Selecione as estruturas que deseja incluir no backup. O arquivo gerado contém todas as ordens, posições e histórico de cada estrutura selecionada.
+            </div>
+
+            <form method="post" action="{% url 'trading:exportar_backup' %}">
+                {% csrf_token %}
+
+                <label class="select-all-row" for="sel-all">
+                    <input type="checkbox" id="sel-all" style="accent-color:var(--dash-accent); width:14px; height:14px;">
+                    Selecionar todas
+                </label>
+
+                <div class="est-list" id="est-list-export">
+                    {% for est in estruturas %}
+                    <label class="est-check-row" for="est-{{ est.id }}">
+                        <input type="checkbox" name="estrutura_ids" value="{{ est.id }}" id="est-{{ est.id }}" class="est-export-cb">
+                        <div class="est-check-info">
+                            <div class="est-check-name">{{ est.nome }}</div>
+                            <div class="est-check-meta">
+                                {% if est.status == 'ABERTA' %}
+                                    <span style="color:var(--color-compra);">● Ativa</span>
+                                {% else %}
+                                    <span style="color:var(--dash-muted);">● Finalizada</span>
+                                {% endif %}
+                                {% if est.data_inicial %}· {{ est.data_inicial|date:"d/m/y" }}{% endif %}
+                                · {{ est.ordens.count }} ordem{{ est.ordens.count|pluralize:"ns" }}
+                            </div>
+                        </div>
+                        <div class="est-check-val {% if est.valor_total > 0 %}val-pos{% elif est.valor_total < 0 %}val-neg{% endif %}">
+                            R$ {{ est.valor_total|floatformat:2|intcomma }}
+                        </div>
+                    </label>
+                    {% empty %}
+                    <div class="text-center py-4" style="color:var(--dash-muted); font-size:.85rem;">
+                        <i class="fas fa-layer-group" style="opacity:.3; font-size:1.5rem; display:block; margin-bottom:8px;"></i>
+                        Nenhuma estrutura encontrada.
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <button type="submit" class="btn-download" id="btn-export" disabled>
+                    <i class="fas fa-download"></i>
+                    Baixar Backup JSON
+                </button>
+            </form>
+
+        </div>
+    </div>
+
+    {# ─── IMPORTAR / RESTAURAR ─── #}
+    <div class="backup-section">
+        <div class="backup-section-header">
+            <div class="backup-section-icon icon-import">
+                <i class="fas fa-file-import"></i>
+            </div>
+            <div>
+                <div class="backup-section-title">Restaurar Backup</div>
+                <div class="backup-section-sub">Recriar estruturas a partir de um arquivo .json</div>
+            </div>
+        </div>
+        <div class="backup-section-body">
+
+            <div class="info-box">
+                <i class="fas fa-info-circle"></i>
+                Selecione um arquivo de backup previamente exportado. Você poderá escolher quais estruturas deseja restaurar antes de confirmar.
+            </div>
+
+            {# Step 1: Upload do arquivo #}
+            <div id="step-upload">
+                <div class="drop-zone" id="drop-zone">
+                    <input type="file" id="backup-file-input" accept=".json">
+                    <div class="drop-zone-icon">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </div>
+                    <div class="drop-zone-text">Arraste o arquivo JSON aqui</div>
+                    <div class="drop-zone-hint">ou clique para selecionar</div>
+                    <div class="drop-zone-selected" id="file-name-display"></div>
+                </div>
+
+                <div id="preview-panel">
+                    <div class="preview-header">
+                        <i class="fas fa-check-circle"></i>
+                        Estruturas encontradas no arquivo
+                    </div>
+                    <div id="preview-list"></div>
+                </div>
+
+                <form method="post" action="{% url 'trading:restaurar_backup' %}" enctype="multipart/form-data" id="restore-form" style="margin-top:16px; display:none;">
+                    {% csrf_token %}
+                    <input type="file" name="backup_file" id="hidden-file-input" style="display:none;">
+                    <input type="hidden" name="selected_estruturas" id="selected-estruturas-input">
+                    <button type="submit" class="btn-restore" id="btn-restore">
+                        <i class="fas fa-undo-alt"></i>
+                        Restaurar Selecionadas
+                    </button>
+                </form>
+
+                <div class="warn-box">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Atenção:</strong> A restauração irá <em>criar</em> novas estruturas. Estruturas com o mesmo nome já existentes não serão sobrescritas — uma nova será criada com sufixo de data.
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // ─── EXPORTAR: selecionar todas ───
+    const selAll = document.getElementById('sel-all');
+    const cbs = document.querySelectorAll('.est-export-cb');
+    const btnExport = document.getElementById('btn-export');
+
+    function updateExportBtn() {
+        const checked = document.querySelectorAll('.est-export-cb:checked').length;
+        btnExport.disabled = checked === 0;
+        btnExport.innerHTML = `<i class="fas fa-download"></i> Baixar Backup JSON${checked > 0 ? ' (' + checked + ')' : ''}`;
+    }
+
+    if (selAll) {
+        selAll.addEventListener('change', function () {
+            cbs.forEach(cb => { cb.checked = this.checked; });
+            updateExportBtn();
+        });
+    }
+
+    cbs.forEach(cb => {
+        cb.addEventListener('change', function () {
+            selAll.checked = [...cbs].every(c => c.checked);
+            selAll.indeterminate = [...cbs].some(c => c.checked) && !selAll.checked;
+            updateExportBtn();
+        });
+    });
+
+    updateExportBtn();
+
+    // ─── IMPORTAR: drop zone ───
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('backup-file-input');
+    const hiddenFileInput = document.getElementById('hidden-file-input');
+    const fileNameDisplay = document.getElementById('file-name-display');
+    const previewPanel = document.getElementById('preview-panel');
+    const previewList = document.getElementById('preview-list');
+    const restoreForm = document.getElementById('restore-form');
+    const selectedEstruturasInput = document.getElementById('selected-estruturas-input');
+
+    if (dropZone) {
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+
+        fileInput.addEventListener('change', function () {
+            if (this.files[0]) handleFile(this.files[0]);
+        });
+    }
+
+    function handleFile(file) {
+        if (!file.name.endsWith('.json')) {
+            alert('Selecione um arquivo .json válido.');
+            return;
+        }
+
+        fileNameDisplay.textContent = '📄 ' + file.name;
+        fileNameDisplay.style.display = 'block';
+        dropZone.classList.add('dragover');
+
+        // Transfere arquivo para o input oculto do formulário
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        hiddenFileInput.files = dataTransfer.files;
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                renderPreview(data);
+            } catch (err) {
+                previewPanel.style.display = 'block';
+                previewList.innerHTML = `<div class="preview-item" style="color:var(--color-venda);"><i class="fas fa-times-circle me-2"></i>Arquivo JSON inválido ou corrompido.</div>`;
+                restoreForm.style.display = 'none';
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function renderPreview(data) {
+        const estruturas = data.estruturas || [];
+        previewPanel.style.display = 'block';
+        previewList.innerHTML = '';
+
+        if (!estruturas.length) {
+            previewList.innerHTML = `<div class="preview-item" style="color:var(--dash-muted);">Nenhuma estrutura encontrada no arquivo.</div>`;
+            restoreForm.style.display = 'none';
+            return;
+        }
+
+        estruturas.forEach((est, idx) => {
+            const div = document.createElement('div');
+            div.className = 'preview-item';
+            const numOrdens = (est.ordens || []).length;
+            const pl = est.valor_total || 0;
+            const plClass = pl > 0 ? 'val-pos' : pl < 0 ? 'val-neg' : '';
+            div.innerHTML = `
+                <div class="preview-check">
+                    <input type="checkbox" id="prev-${idx}" class="prev-cb" data-idx="${idx}" checked style="width:14px;height:14px;">
+                    <label for="prev-${idx}" style="cursor:pointer;">
+                        <span style="font-weight:600; font-size:.85rem; color:var(--dash-text);">${est.nome}</span>
+                        <span style="font-size:.72rem; color:var(--dash-muted); margin-left:8px;">${numOrdens} ordem${numOrdens !== 1 ? 'ns' : ''}</span>
+                    </label>
+                </div>
+                <span class="${plClass}" style="font-size:.82rem; font-weight:700;">R$ ${formatBRL(pl)}</span>
+            `;
+            previewList.appendChild(div);
+        });
+
+        restoreForm.style.display = 'block';
+        updateSelectedInput(estruturas);
+
+        document.querySelectorAll('.prev-cb').forEach(cb => {
+            cb.addEventListener('change', () => updateSelectedInput(estruturas));
+        });
+    }
+
+    function updateSelectedInput(estruturas) {
+        const checked = [...document.querySelectorAll('.prev-cb:checked')].map(cb => parseInt(cb.dataset.idx));
+        const selected = checked.map(idx => estruturas[idx].nome);
+        selectedEstruturasInput.value = JSON.stringify(selected);
+    }
+
+    function formatBRL(num) {
+        return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+    }
+});
+</script>
+{% endblock %}

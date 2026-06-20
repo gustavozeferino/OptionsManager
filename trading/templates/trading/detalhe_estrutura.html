@@ -188,6 +188,7 @@
                     <th class="text-end">PL Realizado</th>
                     <th class="text-end">PL Aberto</th>
                     <th class="text-end">PL Total</th>
+                    <th class="text-center">Ações</th>
                 </tr>
             </thead>
             <tbody>
@@ -221,6 +222,11 @@
                     </td>
                     <td class="text-end fw-bold {% if pos.pl_total > 0 %}val-pos{% elif pos.pl_total < 0 %}val-neg{% endif %}">
                         {{ pos.pl_total|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-center">
+                        <a href="{% url 'trading:adicionar_ordem_manual' slug=estrutura.slug %}?ativo={{ pos.ativo.ticker }}&qtd={% if pos.quantidade_atual > 0 %}-{{ pos.quantidade_atual|stringformat:'s'|cut:',' }}{% else %}{{ pos.quantidade_atual|stringformat:'s'|cut:'-' }}{% endif %}" class="btn btn-sm btn-outline-danger" title="Zerar posição">
+                            Zerar
+                        </a>
                     </td>
                 </tr>
                 {% empty %}

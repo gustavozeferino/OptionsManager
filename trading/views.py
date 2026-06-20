@@ -62,7 +62,18 @@ def adicionar_ordem(request, slug):
             else:
                 return redirect('trading:detalhe_estrutura', slug=estrutura.slug)
     else:
-        form = OrdemForm()
+        initial = {}
+        ativo_param = request.GET.get('ativo')
+        qtd_param = request.GET.get('qtd')
+        if ativo_param:
+            initial['ativo_input'] = ativo_param
+        if qtd_param:
+            try:
+                initial['quantidade'] = float(qtd_param)
+            except ValueError:
+                pass
+        initial['data'] = timezone.now().date()
+        form = OrdemForm(initial=initial)
     
     return render(request, 'trading/adicionar_ordem.html', {'form': form, 'estrutura': estrutura})
 
@@ -138,6 +149,24 @@ def dashboard_estruturas(request):
     total_pl_aberto = estruturas.aggregate(Sum('pl_aberto'))['pl_aberto__sum'] or 0
     valor_total_carteira = estruturas.aggregate(Sum('valor_total'))['valor_total__sum'] or 0
     total_exposicao = estruturas_ativas.aggregate(Sum('exposicao_atual'))['exposicao_atual__sum'] or 0
+
+    # Calcula exposição comprada e vendida separadas a partir das posições abertas
+    from core.models import HistoricoPreco as _HP
+    from .models import PosicaoConsolidada as _PC
+    posicoes_ativas = _PC.objects.filter(
+        estrutura__usuario=request.user,
+        estrutura__status='ABERTA'
+    ).exclude(quantidade_atual=0).select_related('ativo')
+    exposicao_comprada_global = 0
+    exposicao_vendida_global = 0
+    for _p in posicoes_ativas:
+        _hist = _HP.objects.filter(ativo=_p.ativo, fechamento__gt=0).order_by('-data_pregao').first()
+        _preco = float(_hist.fechamento) if _hist else float(_p.preco_medio)
+        _exp = abs(_p.quantidade_atual) * _preco
+        if _p.quantidade_atual > 0:
+            exposicao_comprada_global += _exp
+        else:
+            exposicao_vendida_global += _exp
     
     # Prepara dados para o gráfico ECharts (evolução do patrimônio) com lógica de fill-forward
     # Isso garante que o gráfico não caia se uma estrutura não tiver dado para um dia específico
@@ -188,6 +217,8 @@ def dashboard_estruturas(request):
         'total_pl_aberto': total_pl_aberto,
         'valor_total_carteira': valor_total_carteira,
         'total_exposicao': total_exposicao,
+        'exposicao_comprada_global': exposicao_comprada_global,
+        'exposicao_vendida_global': exposicao_vendida_global,
         'datas_chart': json.dumps(datas_chart),
         'valores_chart': json.dumps(valores_chart),
         'sparklines_json': json.dumps({
@@ -426,21 +457,43 @@ def relatorio_performance(request):
     """
     import json
     from .services import get_performance_report
+    from core.models import HistoricoPreco as _HP3
+    from .models import PosicaoConsolidada as _PC3
     report = get_performance_report(request.user)
     
     if not report:
         return render(request, 'trading/relatorios.html', {'empty': True})
+
+    # Calcula exposição comprada/vendida separadas para o KPI
+    posicoes_rel = _PC3.objects.filter(
+        estrutura__usuario=request.user,
+        estrutura__status='ABERTA'
+    ).exclude(quantidade_atual=0).select_related('ativo')
+    exposicao_comprada_global = 0
+    exposicao_vendida_global = 0
+    for _p in posicoes_rel:
+        _hist = _HP3.objects.filter(ativo=_p.ativo, fechamento__gt=0).order_by('-data_pregao').first()
+        _preco = float(_hist.fechamento) if _hist else float(_p.preco_medio)
+        _exp = abs(_p.quantidade_atual) * _preco
+        if _p.quantidade_atual > 0:
+            exposicao_comprada_global += _exp
+        else:
+            exposicao_vendida_global += _exp
         
     context = {
         'equity_datas': json.dumps(report['equity_curve']['datas']),
         'equity_valores': json.dumps(report['equity_curve']['valores']),
         'equity_exposicao': json.dumps(report['equity_curve']['exposicao']),
+        'equity_exposicao_comprada': json.dumps(report['equity_curve'].get('exposicao_comprada', [])),
+        'equity_exposicao_vendida': json.dumps(report['equity_curve'].get('exposicao_vendida', [])),
         'monthly_labels': json.dumps(report['monthly']['labels']),
         'monthly_values': json.dumps(report['monthly']['values']),
         'weekly_labels': json.dumps(report['weekly']['labels']),
         'weekly_values': json.dumps(report['weekly']['values']),
         'total_atual': report['total_atual'],
         'exposicao_atual': report['exposicao_atual'],
+        'exposicao_comprada_global': exposicao_comprada_global,
+        'exposicao_vendida_global': exposicao_vendida_global,
     }
     return render(request, 'trading/relatorios.html', context)
 
@@ -607,6 +660,24 @@ def dashboard(request):
     valor_total_carteira = estruturas.aggregate(Sum('valor_total'))['valor_total__sum'] or 0
     total_exposicao    = estruturas.filter(status='ABERTA').aggregate(Sum('exposicao_atual'))['exposicao_atual__sum'] or 0
 
+    # Calcula exposição comprada/vendida separadas
+    from core.models import HistoricoPreco as _HP2
+    from .models import PosicaoConsolidada as _PC2
+    posicoes_ativas_dash = _PC2.objects.filter(
+        estrutura__usuario=request.user,
+        estrutura__status='ABERTA'
+    ).exclude(quantidade_atual=0).select_related('ativo')
+    exposicao_comprada_global = 0
+    exposicao_vendida_global = 0
+    for _p in posicoes_ativas_dash:
+        _hist = _HP2.objects.filter(ativo=_p.ativo, fechamento__gt=0).order_by('-data_pregao').first()
+        _preco = float(_hist.fechamento) if _hist else float(_p.preco_medio)
+        _exp = abs(_p.quantidade_atual) * _preco
+        if _p.quantidade_atual > 0:
+            exposicao_comprada_global += _exp
+        else:
+            exposicao_vendida_global += _exp
+
     # Sparklines por estrutura (últimos 60 snapshots)
     sparklines = {}
     for est in estruturas_ativas:
@@ -642,6 +713,8 @@ def dashboard(request):
         'total_pl_aberto': total_pl_aberto,
         'valor_total_carteira': valor_total_carteira,
         'total_exposicao': total_exposicao,
+        'exposicao_comprada_global': exposicao_comprada_global,
+        'exposicao_vendida_global': exposicao_vendida_global,
         'ultima_data': ultima_data,
         'num_estruturas_ativas': len(estruturas_ativas),
         'num_spreads_ativos': len(spreads_ativos),
@@ -713,3 +786,85 @@ def posicoes_view(request):
     }
     return render(request, 'trading/posicoes.html', context)
 
+
+@login_required
+def backup_estruturas(request):
+    """
+    Página de gestão de backup de estruturas (exportar/importar JSON).
+    """
+    estruturas = Estrutura.objects.filter(usuario=request.user).exclude(slug='sem-estrutura')
+    return render(request, 'trading/backup_estruturas.html', {'estruturas': estruturas})
+
+
+@login_required
+def exportar_backup(request):
+    """
+    Gera e retorna o arquivo JSON de backup das estruturas selecionadas.
+    """
+    import json
+    from django.http import HttpResponse
+    from .services import exportar_estruturas_json
+
+    if request.method != 'POST':
+        return redirect('trading:backup_estruturas')
+
+    estrutura_ids = request.POST.getlist('estrutura_ids')
+    if not estrutura_ids:
+        messages.error(request, 'Selecione ao menos uma estrutura para exportar.')
+        return redirect('trading:backup_estruturas')
+
+    payload = exportar_estruturas_json(estrutura_ids, request.user)
+
+    json_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8')
+    from datetime import datetime
+    filename = f"backup_estruturas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+
+    response = HttpResponse(json_bytes, content_type='application/json; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def restaurar_backup(request):
+    """
+    Recebe um arquivo JSON de backup e restaura as estruturas selecionadas.
+    """
+    import json
+    from .services import importar_estruturas_json
+
+    if request.method != 'POST':
+        return redirect('trading:backup_estruturas')
+
+    backup_file = request.FILES.get('backup_file')
+    if not backup_file:
+        messages.error(request, 'Nenhum arquivo de backup enviado.')
+        return redirect('trading:backup_estruturas')
+
+    try:
+        content = backup_file.read().decode('utf-8')
+        payload = json.loads(content)
+    except Exception as e:
+        messages.error(request, f'Arquivo JSON inválido: {e}')
+        return redirect('trading:backup_estruturas')
+
+    # Estruturas selecionadas via frontend (JSON de nomes)
+    selected_raw = request.POST.get('selected_estruturas', '')
+    nomes_selecionados = None
+    if selected_raw:
+        try:
+            nomes_selecionados = json.loads(selected_raw)
+        except Exception:
+            nomes_selecionados = None
+
+    criadas, erros = importar_estruturas_json(payload, request.user, nomes_selecionados)
+
+    if criadas > 0:
+        messages.success(request, f'{criadas} estrutura{"s" if criadas != 1 else ""} restaurada{"s" if criadas != 1 else ""} com sucesso!')
+
+    for erro in erros[:10]:
+        messages.warning(request, erro)
+
+    if len(erros) > 10:
+        messages.warning(request, f'... e mais {len(erros) - 10} avisos omitidos.')
+
+    return redirect('trading:dashboard_estruturas')
